@@ -15,13 +15,15 @@ class User(AbstractUser):
         HOSPITAL = "hospital", "Hospital"
         AMBULANCE = "ambulance", "Ambulance / Emergency Responder"
 
+    ROLES = Role.choices
+
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.POLICE)
     phone = models.CharField(max_length=20, blank=True)
     police_station = models.ForeignKey(
-        "services.PoliceStation", null=True, blank=True, on_delete=models.SET_NULL, related_name="users"
+        "emergency.PoliceStation", null=True, blank=True, on_delete=models.SET_NULL, related_name="users"
     )
     hospital = models.ForeignKey(
-        "services.Hospital", null=True, blank=True, on_delete=models.SET_NULL, related_name="users"
+        "emergency.Hospital", null=True, blank=True, on_delete=models.SET_NULL, related_name="users"
     )
     # Self-registered accounts must be approved by an admin before they can log in.
     is_approved = models.BooleanField(default=False)
@@ -33,6 +35,19 @@ class User(AbstractUser):
         if self.role == self.Role.ADMIN:
             self.is_staff = True
         super().save(*args, **kwargs)
+        self._link_organization()
+
+    def _link_organization(self):
+        """Once an account is approved, make it the login account of the organisation it chose at sign-up."""
+        if not self.is_approved:
+            return
+        field = {"police": "police_station", "hospital": "hospital"}.get(self.role)
+        if not field or not getattr(self, field + "_id"):
+            return
+        model = self._meta.get_field(field).related_model
+        if model.objects.filter(account=self).exists():
+            return
+        model.objects.filter(pk=getattr(self, field + "_id"), account__isnull=True).update(account=self)
 
     @property
     def organization_name(self):

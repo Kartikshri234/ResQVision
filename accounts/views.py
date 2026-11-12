@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from services.models import Hospital, PoliceStation
+from emergency.models import Hospital, PoliceStation
 
 from .models import OTP, User
 from .permissions import IsAdminRole
@@ -18,6 +18,11 @@ from .serializers import (AdminUserSerializer, ProfileUpdateSerializer, SignupSe
                           UserSerializer)
 
 log = logging.getLogger("smartcrash")
+
+
+def user_json(user):
+    """Plain dict for a user (shared with the emergency app)."""
+    return UserSerializer(user).data
 
 
 class LoginView(APIView):

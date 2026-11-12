@@ -19,8 +19,6 @@ urlpatterns = [
     path("ambulances/<int:pk>/", v.ambulance_item),
     path("cameras/", v.cameras),
     path("cameras/<int:pk>/", v.camera_item),
-    path("users/", v.users),
-    path("users/<int:pk>/", v.user_item),
     path("notifications/", v.notifications),
     path("notifications/read/", v.notifications_read),
     path("notifications/<int:pk>/read/", v.notifications_read),

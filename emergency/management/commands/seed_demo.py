@@ -39,7 +39,7 @@ def user(username, password, role, first_name, email=None):
     if u:
         return u
     return User.objects.create_user(username=username, password=password, role=role, first_name=first_name,
-                                    email=email or f"{username}@smartcrash.ai", phone="9000000000")
+                                    email=email or f"{username}@smartcrash.ai", phone="9000000000", is_approved=True)
 
 
 class Command(BaseCommand):

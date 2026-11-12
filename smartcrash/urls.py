@@ -5,10 +5,9 @@ from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/", include("accounts.urls")),
-    path("api/", include("services.urls")),
-    path("api/", include("accidents.urls")),
-    path("", include("web.urls")),
+    path("api/", include("accounts.urls")),    # auth, profile, OTP reset, user management
+    path("api/", include("emergency.urls")),   # accidents, alerts, services, cameras, analytics, ingest
+    path("", include("web.urls")),             # HTML / CSS / JS frontend
 ]
 
 # Evidence images / videos are served by Django in development.
