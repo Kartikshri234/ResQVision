@@ -11,6 +11,7 @@
 
   /* ---------- icons (Feather-style, 24px grid) ---------- */
   const ICONS = {
+    resq: '<path d="M12 2.5l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z"/><path d="M7.5 12h2.2l1.6-3.2 2.2 6.4 1.6-3.2h1.4"/>',
     home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
     map: '<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>',
@@ -264,7 +265,7 @@
     if (def.chrome === false || !user) { top.hidden = true; nav.hidden = true; return; }
     const title = typeof def.title === 'function' ? def.title(params) : def.title || 'ResQVision';
     const tab = typeof def.tab === 'function' ? def.tab(user) : def.tab;
-    const left = def.back ? `<button class="iconbtn" data-act="back" data-fallback="${def.back === true ? SC.homeFor() : def.back}" aria-label="Back">${SC.icon('back')}</button>` : `<div class="iconbtn" style="background:#fff;color:var(--navy)">${SC.icon('shield')}</div>`;
+    const left = def.back ? `<button class="iconbtn" data-act="back" data-fallback="${def.back === true ? SC.homeFor() : def.back}" aria-label="Back">${SC.icon('back')}</button>` : `<div class="iconbtn" style="background:#fff;color:var(--navy)">${SC.icon('resq')}</div>`;
     const bell = tab === '/notifications' ? '' : `<button class="iconbtn" data-go="/notifications" aria-label="Notifications">${SC.icon('bell')}${SC.state.unread ? `<span class="dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</button>`;
     top.innerHTML = `${left}<div class="title">${esc(title)}</div>${bell}`;
     top.hidden = false;
