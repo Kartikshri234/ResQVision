@@ -100,7 +100,7 @@ class Accident(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         if not self.accident_id:
-            self.accident_id = f"SC-{1000 + self.pk}"
+            self.accident_id = f"RV-{1000 + self.pk}"
             super().save(update_fields=["accident_id"])
 
     def __str__(self):

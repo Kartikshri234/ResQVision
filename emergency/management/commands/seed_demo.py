@@ -39,7 +39,7 @@ def user(username, password, role, first_name, email=None):
     if u:
         return u
     return User.objects.create_user(username=username, password=password, role=role, first_name=first_name,
-                                    email=email or f"{username}@smartcrash.ai", phone="9000000000", is_approved=True)
+                                    email=email or f"{username}@resqvision.ai", phone="9000000000", is_approved=True)
 
 
 class Command(BaseCommand):
@@ -51,7 +51,7 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         SystemSetting.get()
         if not User.objects.filter(username="admin").exists():
-            User.objects.create_superuser("admin", "admin@smartcrash.ai", "Admin@123", first_name="System Admin")
+            User.objects.create_superuser("admin", "admin@resqvision.ai", "Admin@123", first_name="System Admin")
 
         for cid, name, lat, lng, road in CAMERAS:
             Camera.objects.get_or_create(camera_id=cid, defaults=dict(name=name, latitude=lat, longitude=lng,
