@@ -1,6 +1,6 @@
-# SmartCrash AI
+# ResQVision
 
-SmartCrash AI is a Django-based emergency response coordination system for
+ResQVision is a Django-based emergency response coordination system for
 AI-detected road accidents. It receives verified accident events from an
 external detection service, determines whether an event requires manual
 verification, alerts nearby police stations and hospitals, and tracks the
@@ -23,6 +23,7 @@ response through resolution.
 
 - Python and Django 4.2-5.x
 - Django REST Framework
+- HTML, CSS, and vanilla JavaScript frontend with Leaflet maps
 - Pillow for generated and uploaded accident evidence
 - SQLite by default, with optional PostgreSQL configuration
 - Django session authentication and the Django admin
@@ -30,21 +31,32 @@ response through resolution.
 ## Project structure
 
 ```text
-smartcrash_ai/
+ResQVision/
 ├── manage.py
 ├── requirements.txt
+├── .env.example              # Environment variables (API key, database)
 ├── accounts/                 # Custom user model and authentication APIs
 ├── emergency/                # Accident domain, APIs, services, and commands
-├── smartcrash/               # Django project settings, URLs, and WSGI entry point
-├── ai_service/               # Reserved for an external/ future AI detector
-├── static/                   # Static asset directories
-└── templates/                # Template directory used by the page views
+├── web/                      # HTML / CSS / JavaScript frontend served by Django
+│   ├── templates/web/index.html
+│   └── static/web/{css,js}/  # app.css, core.js, screens_*.js, app.js
+├── resqvision/               # Django project settings, URLs, and WSGI entry point
+├── ai_service/               # Standalone AI detector (YOLO + ByteTrack) and test sender
+│   ├── detector.py           # Accident logic (pure Python)
+│   ├── run_detector.py       # Reads video/RTSP/webcam and reports accidents
+│   ├── client.py             # Sends events to POST /api/ingest/
+│   ├── send_test_event.py    # Fake event for testing without video or YOLO
+│   └── requirements.txt      # Separate dependencies (ultralytics, opencv)
 ```
 
-The backend currently expects `templates/auth.html` and `templates/app.html`
-for its two page views. These templates, frontend assets, and the
-`ai_service` implementation are not included in the current repository
-contents; the REST backend and Django admin can still be used independently.
+All frontend files (HTML template, CSS, JavaScript) live in one place, the
+`web/` app. There are no separate project-level `static/` or `templates/`
+folders.
+
+The frontend is a single-page app (plain HTML, CSS, and JavaScript) served at
+`/`. It talks to the REST API with the Django session cookie, shows different
+screens for administrators, police, and hospital users, and uses Leaflet
+(loaded from a CDN, so an internet connection is needed for the maps).
 
 ## Quick start
 
@@ -96,7 +108,11 @@ listed in `requirements.txt` and provide the database variables.
 
 ### 4. Initialize the database
 
+The repository does not include migration files yet, so create them first
+(this is needed once), then apply them:
+
 ```bash
+python manage.py makemigrations accounts emergency
 python manage.py migrate
 ```
 
@@ -137,9 +153,8 @@ python manage.py runserver
 
 Useful URLs:
 
-- Admin: `http://127.0.0.1:8000/admin/`
-- Auth page: `http://127.0.0.1:8000/`
-- Application page: `http://127.0.0.1:8000/app/`
+- Web app (login and all dashboards): `http://127.0.0.1:8000/`
+- Django admin: `http://127.0.0.1:8000/admin/`
 
 ## Accident workflow
 
@@ -239,6 +254,30 @@ curl -X POST http://127.0.0.1:8000/api/ingest/ \
 The response contains the generated accident ID and its initial status.
 Optional multipart fields include `snapshot` and `video`.
 
+## AI detection service
+
+The `ai_service/` folder is a separate program with its own dependencies. It
+uses the same `AI_SERVICE_API_KEY` as Django and sends accidents to
+`POST /api/ingest/`.
+
+```bash
+cd ai_service
+pip install -r requirements.txt
+
+# Test the AI -> Django -> alert path without video or YOLO (needs seed_demo data)
+python send_test_event.py --camera-id CAM-001
+
+# Run the real detector on a video file, webcam (0), or RTSP stream
+python run_detector.py --source sample.mp4 --camera-id CAM-001 --show
+python run_detector.py --source sample.mp4 --camera-id CAM-001 --dry-run
+```
+
+Use a camera ID registered in the admin app (it supplies the location), or
+pass `--lat`, `--lng`, and `--location` for a mobile camera. If you change
+`AI_SERVICE_API_KEY` for Django, set the same value in the terminal that runs
+the detector, or pass `--api-key`. Django ignores a second report from the
+same camera within two minutes.
+
 ## Simulation
 
 After demo data has been loaded, simulate one or more AI events:
@@ -281,7 +320,7 @@ Before deployment:
 - Do not expose demo credentials or development OTP responses.
 - Configure HTTPS, secure cookies, CSRF settings, media storage, backups, and
   appropriate file-upload limits.
-- Add the frontend templates/assets and deploy them with the static files.
+- Run `python manage.py collectstatic` and serve `/static/` and `/media/` from a web server.
 - Run `python manage.py check --deploy` and apply migrations during release.
 
 ## License

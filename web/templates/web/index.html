@@ -1,0 +1,29 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B2A5B">
+  <title>ResQVision</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="{% static 'web/css/app.css' %}">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar" hidden></header>
+    <main id="screen"></main>
+    <nav id="bottomnav" hidden></nav>
+  </div>
+  <div id="toasts"></div>
+  <div id="modal-root"></div>
+
+  <script>window.RV_CONFIG = { demo: {{ demo|yesno:"true,false" }} };</script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="{% static 'web/js/core.js' %}"></script>
+  <script src="{% static 'web/js/screens_common.js' %}"></script>
+  <script src="{% static 'web/js/screens_core.js' %}"></script>
+  <script src="{% static 'web/js/screens_admin.js' %}"></script>
+  <script src="{% static 'web/js/screens_responder.js' %}"></script>
+  <script src="{% static 'web/js/app.js' %}"></script>
+</body>
+</html>

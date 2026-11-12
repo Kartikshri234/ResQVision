@@ -1,4 +1,4 @@
-"""SmartCrash AI - Django settings."""
+"""ResQVision - Django settings."""
 import os
 from pathlib import Path
 
@@ -31,12 +31,12 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "smartcrash.urls"
+ROOT_URLCONF = "resqvision.urls"
 
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -49,7 +49,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "smartcrash.wsgi.application"
+WSGI_APPLICATION = "resqvision.wsgi.application"
 
 # ---------------------------------------------------------------- Database
 # SQLite by default so the project runs out of the box.
@@ -107,7 +107,7 @@ REST_FRAMEWORK = {
 # OTP / password-reset e-mails are printed to the console in development.
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
-# ---------------------------------------------------------------- SmartCrash
+# ---------------------------------------------------------------- ResQVision
 # Shared secret the Python AI detection service sends in the X-API-Key header.
 AI_SERVICE_API_KEY = os.environ.get("AI_SERVICE_API_KEY", "dev-ai-key-change-me")
 

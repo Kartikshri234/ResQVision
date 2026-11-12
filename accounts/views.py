@@ -17,7 +17,7 @@ from .permissions import IsAdminRole
 from .serializers import (AdminUserSerializer, ProfileUpdateSerializer, SignupSerializer,
                           UserSerializer)
 
-log = logging.getLogger("smartcrash")
+log = logging.getLogger("resqvision")
 
 
 def user_json(user):
@@ -113,7 +113,7 @@ class ForgotPasswordView(APIView):
         if user:
             otp = OTP.issue(user)
             log.warning("[OTP] code for %s: %s", user.username, otp.code)
-            print(f"\n[SmartCrash OTP] {user.username}: {otp.code}\n")
+            print(f"\n[ResQVision OTP] {user.username}: {otp.code}\n")
             if settings.DEBUG:
                 payload["dev_otp"] = otp.code
         return Response(payload)

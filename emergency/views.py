@@ -1,4 +1,4 @@
-"""REST API for SmartCrash AI. Every endpoint is role-aware: admins see everything,
+"""REST API for ResQVision. Every endpoint is role-aware: admins see everything,
 police and hospital users only see accidents their organisation was alerted about."""
 from datetime import timedelta
 from functools import wraps

@@ -1,0 +1,5 @@
+# AI detection service (separate from the Django requirements)
+ultralytics>=8.3        # YOLO + ByteTrack (installs PyTorch and OpenCV as dependencies)
+opencv-python>=4.9
+requests>=2.31
+# Optional: ffmpeg on PATH makes the saved accident clips play in every browser.
