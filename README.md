@@ -116,11 +116,17 @@ python manage.py makemigrations accounts emergency
 python manage.py migrate
 ```
 
-Create an administrator interactively if needed:
+Create the super admin (the only way to get the first account; there is no
+public sign-up). It reads `SUPERADMIN_USERNAME`, `SUPERADMIN_EMAIL` and
+`SUPERADMIN_PASSWORD` from `.env`, or prompts for them:
 
 ```bash
-python manage.py createsuperuser
+python manage.py create_superadmin
 ```
+
+Sign in with it, then create every other account (admin, police, hospital,
+ambulance) from **Admin > Services > Users**. Only the super admin can create
+or change other admin accounts, and the super admin account cannot be deleted.
 
 ### 5. Load demo data (optional)
 
@@ -186,7 +192,6 @@ authentication and require an authenticated user.
 | --- | --- | --- |
 | POST | `/api/auth/login/` | Log in by username or email |
 | POST | `/api/auth/logout/` | End the current session |
-| POST | `/api/auth/signup/` | Create a police or hospital account |
 | GET/PATCH | `/api/auth/me/` | Read or update the current profile |
 | POST | `/api/auth/password/` | Change the current password |
 | POST | `/api/auth/forgot/` | Send a password-reset OTP |

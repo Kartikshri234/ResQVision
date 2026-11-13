@@ -5,17 +5,15 @@ from django.contrib.auth import authenticate, login, logout, update_session_auth
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
-from rest_framework import status, viewsets
+from rest_framework import viewsets
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from emergency.models import Hospital, PoliceStation
-
 from .models import OTP, User
 from .permissions import IsAdminRole
-from .serializers import (AdminUserSerializer, ProfileUpdateSerializer, SignupSerializer,
-                          UserSerializer)
+from .serializers import AdminUserSerializer, ProfileUpdateSerializer, UserSerializer
 
 log = logging.getLogger("resqvision")
 
@@ -49,20 +47,6 @@ class LogoutView(APIView):
     def post(self, request):
         logout(request)
         return Response({"detail": "Logged out."})
-
-
-class SignupView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def post(self, request):
-        ser = SignupSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        ser.save()
-        return Response(
-            {"detail": "Account created. An administrator must approve it before you can log in."},
-            status=status.HTTP_201_CREATED,
-        )
 
 
 class MeView(APIView):
@@ -154,20 +138,13 @@ class ResetPasswordView(APIView):
         return Response({"detail": "Password reset. You can log in now."})
 
 
-class OrganizationsView(APIView):
-    """Public list used by the sign-up form."""
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get(self, request):
-        return Response({
-            "hospitals": list(Hospital.objects.order_by("name").values("id", "name")),
-            "police_stations": list(PoliceStation.objects.order_by("name").values("id", "name")),
-        })
-
-
 class UserAdminViewSet(viewsets.ModelViewSet):
-    """Admin-only user management."""
+    """The ONLY way to create, change or delete accounts (there is no public sign-up).
+
+    - Any admin can manage police / hospital / ambulance accounts.
+    - Only the super admin can create, edit or delete other admin accounts.
+    - A super admin account can never be deleted or demoted through the API.
+    """
     permission_classes = [IsAdminRole]
     serializer_class = AdminUserSerializer
 
@@ -177,8 +154,21 @@ class UserAdminViewSet(viewsets.ModelViewSet):
             qs = qs.filter(is_approved=False)
         return qs
 
+    def _check_can_touch(self, target):
+        me = self.request.user
+        if target.is_superuser and not me.is_superuser:
+            raise PermissionDenied("Only the super admin can change the super admin account.")
+        if target.role == User.Role.ADMIN and not me.is_superuser and target.pk != me.pk:
+            raise PermissionDenied("Only the super admin can change other admin accounts.")
+
+    def perform_update(self, serializer):
+        self._check_can_touch(serializer.instance)
+        serializer.save()
+
     def perform_destroy(self, instance):
         if instance.pk == self.request.user.pk:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError("You cannot delete your own account.")
+        if instance.is_superuser:
+            raise PermissionDenied("The super admin account cannot be deleted.")
+        self._check_can_touch(instance)
         instance.delete()

@@ -8,11 +8,12 @@
     public: true, chrome: false,
     render: async () => `<div class="splash">${logo()}<h1>ResQVision</h1><p style="color:#B9CBEA">AI road accident detection &amp; emergency response</p><div class="spinner" style="border-color:rgba(255,255,255,.25);border-top-color:#fff;margin-top:24px"></div></div>`,
     mount: () => {
+      const desktop = window.innerWidth >= 900;
       setTimeout(() => {
         if ((location.hash || '#/') !== '#/' && location.hash !== '') return;
         if (SC.state.user) SC.go(SC.homeFor());
-        else SC.go(SC.store.get('onboarded') ? '/login' : '/onboarding');
-      }, 1300);
+        else SC.go(SC.store.get('onboarded') || desktop ? '/login' : '/onboarding');
+      }, desktop ? 0 : 1300);
     },
   });
 
@@ -38,7 +39,6 @@
   SC.actions['onb-skip'] = () => { SC.state.onb = 0; SC.store.set('onboarded', true); SC.go('/login'); };
 
   /* 3. Login (username or e-mail) */
-  const DEMO = [['Admin', 'admin', 'Admin@123'], ['Police', 'police_cp', 'Police@123'], ['Hospital', 'hosp_aiims', 'Hospital@123']];
   SC.route('/login', {
     public: true, chrome: false,
     render: async () => `<div class="authpage">${logo('sm')}<h1 class="mt16">Welcome back</h1><p class="muted mt8 mb8">Sign in to the ResQVision emergency platform.</p>
@@ -47,10 +47,8 @@
         ${SC.ui.field({ label: 'Password', name: 'password', type: 'password', required: true, autocomplete: 'current-password', placeholder: 'Your password' })}
         <div class="row between mb8"><a data-go="/forgot" class="small bold">Forgot password?</a></div>
         <button class="btn" type="submit">Sign in</button></form>
-      <p class="center small muted mt24">New police or hospital user? <a data-go="/signup" class="bold">Create an account</a></p>
-      ${window.RV_CONFIG.demo ? `<div class="demo-box"><div class="small bold">Test accounts (run "python manage.py seed_demo" first)</div>${DEMO.map((d) => `<button class="btn sm light" data-act="fill-demo" data-user="${d[1]}" data-pass="${d[2]}">${d[0]}</button>`).join('')}</div>` : ''}</div>`,
+      <p class="center small muted mt24">Accounts are created by the administrator. Contact your administrator if you need access.</p></div>`,
   });
-  SC.actions['fill-demo'] = (el) => { const f = document.querySelector('form[data-form=login]'); f.username.value = el.dataset.user; f.password.value = el.dataset.pass; };
   SC.forms.login = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
     const d = SC.formData(form);
     const user = await SC.api('/auth/login/', { method: 'POST', body: { username: d.username, password: d.password }, auth: false });
@@ -59,38 +57,7 @@
     SC.go(SC.homeFor());
   });
 
-  /* 4. Signup */
-  const orgOptions = (role) => ((role === 'hospital' ? SC.state.orgs.hospitals : SC.state.orgs.police_stations) || []).map((o) => [o.id, o.name]);
-  SC.route('/signup', {
-    public: true, chrome: false,
-    render: async () => {
-      SC.state.orgs = await SC.api('/auth/organizations/', { auth: false });
-      return `<div class="authpage"><a data-go="/login" class="row small bold">${icon('back', 'sm')} Back to sign in</a><h1 class="mt16">Create account</h1>
-        <p class="muted mt8 mb8">Accounts are reviewed by an administrator before first sign-in.</p>
-        <form data-form="signup" class="mt16">
-          ${SC.ui.field({ label: 'First name', name: 'first_name', required: true })}
-          ${SC.ui.field({ label: 'Last name', name: 'last_name' })}
-          ${SC.ui.field({ label: 'Username', name: 'username', required: true, autocomplete: 'username' })}
-          ${SC.ui.field({ label: 'Email', name: 'email', type: 'email', required: true })}
-          ${SC.ui.field({ label: 'Phone', name: 'phone', type: 'tel' })}
-          ${SC.ui.field({ label: 'I am a', name: 'role', type: 'select', options: [['police', 'Police officer'], ['hospital', 'Hospital staff']] })}
-          ${SC.ui.field({ label: 'Organization', name: 'organization', type: 'select', options: orgOptions('police'), required: true })}
-          ${SC.ui.field({ label: 'Password (min 8 characters)', name: 'password', type: 'password', required: true, autocomplete: 'new-password' })}
-          <button class="btn" type="submit">Create account</button></form></div>`;
-    },
-    mount: (el) => {
-      const form = el.querySelector('form');
-      form.role.onchange = () => { form.organization.innerHTML = orgOptions(form.role.value).map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join(''); };
-    },
-  });
-  SC.forms.signup = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
-    const d = SC.formData(form);
-    const body = { username: d.username, email: d.email, first_name: d.first_name, last_name: d.last_name, phone: d.phone, role: d.role, password: d.password };
-    body[d.role === 'hospital' ? 'hospital' : 'police_station'] = Number(d.organization);
-    const res = await SC.api('/auth/signup/', { method: 'POST', body, auth: false });
-    SC.toast(res.detail, 'success', 6000);
-    SC.go('/login');
-  });
+  /* 4. (No public sign-up: only an administrator can create accounts, from Admin > Services > Users.) */
 
   /* 5. Forgot password -> 6. OTP -> reset */
   SC.route('/forgot', {

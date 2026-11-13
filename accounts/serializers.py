@@ -34,41 +34,6 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         fields = ["first_name", "last_name", "email", "phone"]
 
 
-class SignupSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
-
-    class Meta:
-        model = User
-        fields = ["username", "email", "first_name", "last_name", "phone", "role",
-                  "police_station", "hospital", "password"]
-
-    def validate_role(self, value):
-        if value not in ("police", "hospital", "ambulance"):
-            raise serializers.ValidationError("Choose Police, Hospital or Ambulance.")
-        return value
-
-    def validate_email(self, value):
-        if value and User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("This e-mail is already registered.")
-        return value
-
-    def validate(self, attrs):
-        role = attrs.get("role")
-        if role == "police" and not attrs.get("police_station"):
-            raise serializers.ValidationError({"police_station": "Select your police station."})
-        if role == "hospital" and not attrs.get("hospital"):
-            raise serializers.ValidationError({"hospital": "Select your hospital."})
-        validate_password(attrs["password"])
-        return attrs
-
-    def create(self, validated):
-        password = validated.pop("password")
-        user = User(**validated, is_approved=False)
-        user.set_password(password)
-        user.save()
-        return user
-
-
 class AdminUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     full_name = serializers.SerializerMethodField()
@@ -87,6 +52,16 @@ class AdminUserSerializer(serializers.ModelSerializer):
     get_full_name = UserSerializer.get_full_name
     get_police_station_name = UserSerializer.get_police_station_name
     get_hospital_name = UserSerializer.get_hospital_name
+
+    def validate_role(self, value):
+        """Only the super admin may give out (or take away) the admin role."""
+        request = self.context.get("request")
+        if request and request.user.is_superuser:
+            return value
+        current = self.instance.role if self.instance else None
+        if value != current and User.Role.ADMIN in (value, current):
+            raise serializers.ValidationError("Only the super admin can create or change admin accounts.")
+        return value
 
     def create(self, validated):
         password = validated.pop("password", "")

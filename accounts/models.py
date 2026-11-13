@@ -25,7 +25,8 @@ class User(AbstractUser):
     hospital = models.ForeignKey(
         "emergency.Hospital", null=True, blank=True, on_delete=models.SET_NULL, related_name="users"
     )
-    # Self-registered accounts must be approved by an admin before they can log in.
+    # Accounts are created only by an administrator (there is no public sign-up). Admin-created accounts are
+    # approved automatically; un-approving an account blocks its login without deleting it.
     is_approved = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):

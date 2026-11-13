@@ -50,6 +50,40 @@
     });
   };
 
+  /* 10a. Administrator console: what the admin manages + what police / hospital users are doing */
+  const ago = (iso) => (iso ? SC.fmt.ago(iso) : null);
+  const orgTable = (rows, kind) => `<div class="tblwrap"><table class="tbl"><thead><tr><th>${kind === 'police' ? 'Police station' : 'Hospital'}</th><th>Login user</th><th>Last sign-in</th><th>Live</th><th>Resolved</th><th>Rejected</th><th>Latest alert</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>
+    <td><b>${esc(r.name)}</b>${r.is_active ? '' : ' <span class="badge gray">Inactive</span>'}</td>
+    <td>${r.account ? esc(r.account) : '<span class="badge orange">No login linked</span>'}</td>
+    <td>${r.account ? (ago(r.last_login) || '<span class="badge orange">Never</span>') : '-'}</td>
+    <td>${r.live ? `<span class="badge red">${r.live}</span>` : '0'}</td><td>${r.resolved}</td><td>${r.rejected}</td>
+    <td>${r.last_alert ? `<a data-go="/accident/${r.last_alert.accident_pk}" class="bold">${esc(r.last_alert.accident)}</a> ${SC.ui.alertStatus(r.last_alert.status)} <span class="tiny muted">${ago(r.last_alert.at)}</span>` : '<span class="muted">No alerts yet</span>'}</td></tr>`).join('') : '<tr><td colspan="7" class="muted">Nothing registered yet.</td></tr>'}</tbody></table></div>`;
+  SC.route('/admin/console', {
+    title: 'Administrator Console', tab: '/admin/console', roles: ADMIN, live: 15000,
+    render: async () => {
+      const [o, s] = await Promise.all([SC.get('/admin/overview/'), SC.get('/dashboard/')]);
+      const a = o.accounts;
+      const u = SC.state.user;
+      const task = (ico, title, big, lines, btn, path) => `<div class="card task"><div class="row"><span class="tico2">${icon(ico)}</span><b>${title}</b></div><div class="big">${big}</div><div class="small muted">${lines}</div><button class="btn sm mt12" data-go="${path}">${btn}</button></div>`;
+      return `<div class="hero"><div class="small muted">Administrator</div><h2>${esc(u.first_name || u.username)}</h2>
+          <p class="small mt8" style="color:#E6F0FC">You issue and manage every account, verify low-confidence detections and keep services configured. Below you can also see what police and hospital users are doing.</p></div>
+        ${s.verification_pending ? `<div class="alertbar mt12" data-go="/admin/live">${icon('alert')}<div class="grow"><b>${s.verification_pending} detection${s.verification_pending > 1 ? 's' : ''} awaiting your verification</b><div class="small">Review the evidence, then confirm or dismiss.</div></div>${icon('chevron')}</div>` : ''}
+        ${SC.ui.section('Administrator tasks')}
+        <div class="grid4">
+          ${task('users', 'User accounts', a.total, `${a.by_role.admin} admin &middot; ${a.by_role.police} police &middot; ${a.by_role.hospital} hospital &middot; ${a.by_role.ambulance} ambulance<br>${a.inactive} deactivated &middot; ${a.blocked} blocked &middot; ${a.never_logged_in} never signed in`, 'Manage accounts', '/admin/users')}
+          ${task('check', 'Verification queue', s.verification_pending, 'Low-confidence AI detections that need an admin decision.', 'Open queue', '/admin/live')}
+          ${task('server', 'Services', s.hospitals + s.police, `${s.hospitals} hospitals &middot; ${s.police} police stations. Link each to a login account.`, 'Manage services', '/admin/hospitals')}
+          ${task('settings', 'Alert rules', s.active, 'active accidents now. Change confidence limit, radius and who is notified.', 'System settings', '/admin/settings')}
+        </div>
+        ${SC.ui.section('Police stations - what they are doing')}${orgTable(o.police, 'police')}
+        ${SC.ui.section('Hospitals - what they are doing')}${orgTable(o.hospitals, 'hospital')}
+        <div class="cols2 mt16">
+          <div>${SC.ui.section('Live activity')}<div class="card">${o.activity.length ? `<div class="feed">${o.activity.map((e) => `<div class="fi"><div class="small"><b>${esc(e.actor)}</b> &middot; ${esc(e.message)}</div><div class="tiny muted"><a data-go="/accident/${e.accident_pk}">${esc(e.accident)}</a> &middot; ${SC.fmt.dt(e.at)}</div></div>`).join('')}</div>` : SC.ui.empty('No activity yet', 'Responses by police and hospitals appear here.', 'activity')}</div></div>
+          <div>${SC.ui.section('Recent sign-ins')}<div class="card">${o.recent_logins.length ? `<div class="feed">${o.recent_logins.map((l) => `<div class="fi"><div class="small"><b>${esc(l.name)}</b> <span class="badge">${esc(l.role)}</span></div><div class="tiny muted">${esc(l.org || l.username)} &middot; ${ago(l.at)}</div></div>`).join('')}</div>` : SC.ui.empty('No sign-ins yet', '', 'users')}</div></div>
+        </div>`;
+    },
+  });
+
   /* 11. Live monitoring */
   SC.route('/admin/live', {
     title: 'Live Monitoring', back: '/admin/home', tab: '/admin/home', roles: ADMIN, live: 5000,

@@ -197,7 +197,7 @@
   SC.del = (p) => SC.api(p, { method: 'DELETE' });
 
   /* ---------- session ---------- */
-  SC.homeFor = (role) => ({ admin: '/admin/home', police: '/police/home', hospital: '/hospital/home' }[role || (SC.state.user && SC.state.user.role)] || '/ambulance');
+  SC.homeFor = (role) => ({ admin: '/admin/console', police: '/police/home', hospital: '/hospital/home' }[role || (SC.state.user && SC.state.user.role)] || '/ambulance');
   SC.setSession = (user) => { SC.state.user = user; };
   SC.logout = (silent) => {
     if (!silent) SC.api('/auth/logout/', { method: 'POST', body: {} }).catch(() => {});
@@ -251,24 +251,62 @@
   SC.clearTimers = () => { SC.state.timers.forEach(clearInterval); SC.state.timers = []; };
 
   SC.nav = {
-    admin: [['Home', '/admin/home', 'home'], ['Accidents', '/admin/accidents', 'alert'], ['Services', '/admin/services', 'server'], ['Analytics', '/admin/analytics', 'chart'], ['Profile', '/profile', 'user']],
+    admin: [['Home', '/admin/console', 'home'], ['Accidents', '/admin/accidents', 'alert'], ['Services', '/admin/services', 'server'], ['Analytics', '/admin/analytics', 'chart'], ['Profile', '/profile', 'user']],
     police: [['Home', '/police/home', 'home'], ['Accidents', '/police/alerts', 'alert'], ['Map', '/map', 'map'], ['Notifications', '/notifications', 'bell'], ['Profile', '/profile', 'user']],
     hospital: [['Home', '/hospital/home', 'home'], ['Emergencies', '/hospital/alerts', 'alert'], ['Map', '/map', 'map'], ['Notifications', '/notifications', 'bell'], ['Profile', '/profile', 'user']],
   };
+
+  // Desktop sidebar: the admin gets every section directly (strings are section headings).
+  SC.sidenav = {
+    admin: ['Administration', ['Admin console', '/admin/console', 'shield'], ['User accounts', '/admin/users', 'users'], ['System settings', '/admin/settings', 'settings'],
+      'Services', ['Hospitals', '/admin/hospitals', 'hospital'], ['Police stations', '/admin/police-stations', 'shield'], ['Cameras', '/admin/cameras', 'camera'],
+      'Monitoring', ['Accident dashboard', '/admin/home', 'home'], ['Live monitoring', '/admin/live', 'activity'], ['Accidents', '/admin/accidents', 'alert'], ['Map', '/map', 'map'], ['Analytics', '/admin/analytics', 'chart'],
+      'Account', ['My profile', '/profile', 'user']],
+  };
+
+  // Each role gets its own portal name and colour theme (colours: body[data-role] in app.css).
+  const PORTAL = {
+    admin: ['Administrator Console', 'System administration, user accounts and oversight of all responders'],
+    police: ['Police Control Room', 'Receive emergency alerts, accept incidents and dispatch patrol teams'],
+    hospital: ['Hospital Emergency Desk', 'Receive emergency alerts, manage beds and dispatch ambulances'],
+  };
+  function brand(user) {
+    const p = (user && PORTAL[user.role]) || ['ResQVision', 'AI-based Road Accident Detection & Emergency Response Portal'];
+    document.body.dataset.role = user ? user.role : '';
+    const n = document.getElementById('gh-name'), s = document.getElementById('gh-sub');
+    if (n) n.textContent = p[0];
+    if (s) s.textContent = p[1];
+  }
 
   function chrome(def, params) {
     const top = document.getElementById('topbar');
     const nav = document.getElementById('bottomnav');
     const screen = document.getElementById('screen');
     const user = SC.state.user;
+    const side = document.getElementById('sidebar');
+    brand(user);
     screen.className = def.chrome === false ? 'bare' : '';
-    if (def.chrome === false || !user) { top.hidden = true; nav.hidden = true; return; }
+    if (def.chrome === false || !user) { top.hidden = true; nav.hidden = true; side.hidden = true; return; }
     const title = typeof def.title === 'function' ? def.title(params) : def.title || 'ResQVision';
     const tab = typeof def.tab === 'function' ? def.tab(user) : def.tab;
     const left = def.back ? `<button class="iconbtn" data-act="back" data-fallback="${def.back === true ? SC.homeFor() : def.back}" aria-label="Back">${SC.icon('back')}</button>` : `<div class="iconbtn" style="background:#fff;color:var(--navy)">${SC.icon('resq')}</div>`;
     const bell = tab === '/notifications' ? '' : `<button class="iconbtn" data-go="/notifications" aria-label="Notifications">${SC.icon('bell')}${SC.state.unread ? `<span class="dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</button>`;
     top.innerHTML = `${left}<div class="title">${esc(title)}</div>${bell}`;
     top.hidden = false;
+
+    // Desktop sidebar (hidden by CSS on phones, where the bottom bar is used instead)
+    const roleLabel = { admin: 'Administrator', police: 'Police', hospital: 'Hospital', ambulance: 'Ambulance' }[user.role] || user.role;
+    const org = user.police_station_name || user.hospital_name || '';
+    const sideItems = SC.sidenav[user.role] || SC.nav[user.role] || [];
+    const curPath = (location.hash.slice(1) || '/').split('?')[0];
+    const inPath = (p) => curPath === p || curPath.indexOf(p + '/') === 0;
+    const exact = sideItems.some((i) => typeof i !== 'string' && inPath(i[1]));
+    const isActive = (p) => (exact ? inPath(p) : tab === p);
+    side.innerHTML = `<div class="side-user"><div class="side-av">${esc(SC.fmt.initials(user.full_name))}</div><div class="grow"><b>${esc(user.full_name)}</b><div class="tiny">${esc(roleLabel)}${org ? ' &middot; ' + esc(org) : ''}</div></div></div>`
+      + (sideItems.some((i) => typeof i === 'string') ? '' : '<div class="side-label">Menu</div>')
+      + sideItems.map((it) => (typeof it === 'string' ? `<div class="side-label">${esc(it)}</div>` : `<a data-go="${it[1]}" class="${isActive(it[1]) ? 'active' : ''}">${SC.icon(it[2])}<span class="grow">${it[0]}</span>${it[0] === 'Notifications' && SC.state.unread ? `<span class="badge-dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</a>`)).join('')
+      + (sideItems.indexOf('Account') >= 0 ? '' : '<div class="side-label">Account</div>') + `<a data-act="logout">${SC.icon('logout')}<span>Sign out</span></a>`;
+    side.hidden = def.nav === false || !sideItems.length;
     const items = SC.nav[user.role];
     if (!items || def.nav === false) { nav.hidden = true; return; }
     nav.innerHTML = items.map(([label, path, ico]) => `<a data-go="${path}" class="${tab === path ? 'active' : ''}">${SC.icon(ico)}<span>${label}</span>${label === 'Notifications' && SC.state.unread ? `<span class="badge-dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</a>`).join('');

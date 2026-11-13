@@ -4,15 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0B2A5B">
-  <title>ResQVision</title>
+  <title>ResQVision - Emergency Response Portal</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="{% static 'web/css/app.css' %}">
 </head>
 <body>
   <div id="app">
-    <header id="topbar" hidden></header>
-    <main id="screen"></main>
+    <div class="tricolor" aria-hidden="true"></div>
+    <header id="govhead">
+      <div class="gh-emblem" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5z"/><path d="M8.5 12l2.5 2.5L15.5 9.5"/></svg></div>
+      <div class="gh-title"><h1 id="gh-name">ResQVision</h1><p id="gh-sub">AI-based Road Accident Detection &amp; Emergency Response Portal</p></div>
+      <div class="gh-right"><span>Emergency helpline</span><b>112</b></div>
+    </header>
+    <div id="notice"><b>Notice:</b> This portal is for authorised police, hospital and administrator users only. Accounts are issued by the system administrator.</div>
+    <div id="shell">
+      <aside id="sidebar" hidden></aside>
+      <div id="main">
+        <header id="topbar" hidden></header>
+        <main id="screen"></main>
+      </div>
+    </div>
     <nav id="bottomnav" hidden></nav>
+    <footer id="govfoot">ResQVision &middot; Road Accident Detection &amp; Emergency Response &middot; Authorised users only. Unauthorised access is prohibited.</footer>
   </div>
   <div id="toasts"></div>
   <div id="modal-root"></div>

@@ -1,8 +1,10 @@
 from django.urls import path
 
 from . import views as v
+from .admin_overview import admin_overview
 
 urlpatterns = [
+    path("admin/overview/", admin_overview),
     path("dashboard/", v.dashboard),
     path("map/", v.map_data),
     path("accidents/", v.accidents),
