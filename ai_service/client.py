@@ -4,6 +4,15 @@ import time
 
 import requests
 
+# Load the project's .env (one folder up) if python-dotenv is installed.
+# Real environment variables already set in the terminal take priority.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, ".env"))
+except ImportError:
+    pass
+
 
 def to_ingest_payload(event: dict) -> dict:
     """Translate the detector's event dict into the field names /api/ingest/ expects."""
