@@ -2,6 +2,8 @@
 police and hospital users only see accidents their organisation was alerted about."""
 from datetime import timedelta
 from functools import wraps
+import hmac
+import math
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -452,8 +454,8 @@ def ambulances(request):
         if not vehicle:
             return err("Vehicle number is required.")
         a = Ambulance.objects.create(hospital=h, vehicle_number=vehicle[:30],
-                                     driver_name=request.data.get("driver_name", "")[:100],
-                                     driver_phone=request.data.get("driver_phone", "")[:20])
+                                     driver_name=str(request.data.get("driver_name") or "")[:100],
+                                     driver_phone=str(request.data.get("driver_phone") or "")[:20])
         return Response(_amb_json(a), status=201)
     qs = Ambulance.objects.select_related("hospital")
     qs = qs.filter(hospital=h) if h else (qs if request.user.role == "admin" else qs.none())
@@ -672,12 +674,43 @@ def simulate(request):
 
 
 # ---------------------------------------------------------------- AI service ingest
+SNAPSHOT_TYPES = ("image/jpeg", "image/png", "image/webp")
+VIDEO_TYPES = ("video/mp4", "video/webm", "video/quicktime")
+
+
+def check_upload(f, kind):
+    """Return an error message for an unacceptable evidence upload, or None when it is fine."""
+    if f is None:
+        return None
+    limit = settings.MAX_SNAPSHOT_BYTES if kind == "snapshot" else settings.MAX_VIDEO_BYTES
+    if f.size > limit:
+        return f"The {kind} is too large (maximum {max(1, limit // (1024 * 1024))} MB)."
+    ctype = (getattr(f, "content_type", "") or "").lower()
+    if ctype not in (SNAPSHOT_TYPES if kind == "snapshot" else VIDEO_TYPES):
+        return f"Unsupported {kind} file type."
+    try:
+        if kind == "snapshot":
+            from PIL import Image
+            Image.open(f).verify()
+        else:
+            head = f.read(12)
+            if not (head[4:8] == b"ftyp" or head[:4] == b"\x1a\x45\xdf\xa3"):
+                return "The video is not a valid MP4 or WebM file."
+    except Exception:
+        return f"The {kind} is not a valid file."
+    finally:
+        f.seek(0)
+    return None
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def ingest(request):
     """Verified accident events from the Python AI service (multipart or JSON, X-API-Key header)."""
-    if request.headers.get("X-API-Key") != settings.AI_SERVICE_API_KEY:
+    provided = request.headers.get("X-API-Key", "")
+    expected = settings.AI_SERVICE_API_KEY
+    if not expected or not hmac.compare_digest(provided.encode(), expected.encode()):
         return err("Invalid API key.", 401)
     d = request.data
     cam = Camera.objects.filter(camera_id=d.get("camera_id")).first()
@@ -685,11 +718,22 @@ def ingest(request):
         lat = float(d.get("latitude") or (cam.latitude if cam else "x"))
         lng = float(d.get("longitude") or (cam.longitude if cam else "x"))
         conf = float(d.get("confidence", 0))
-        people = int(d.get("people_count") or 0)
+        people = max(0, int(d.get("people_count") or 0))
+        if not all(math.isfinite(v) for v in (lat, lng, conf)) or not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise ValueError("out of range")
     except (TypeError, ValueError):
         return err("Unknown camera_id and no valid latitude/longitude; confidence must be a number.")
     conf = min(max(conf / 100 if conf > 1 else conf, 0.0), 1.0)
-    when = parse_datetime(d.get("detected_at") or "") or timezone.now()
+    try:
+        when = parse_datetime(str(d.get("detected_at") or "")) or timezone.now()
+    except ValueError:
+        when = timezone.now()
+    if timezone.is_naive(when):
+        when = timezone.make_aware(when)
+    snapshot, video = request.FILES.get("snapshot"), request.FILES.get("video")
+    problem = check_upload(snapshot, "snapshot") or check_upload(video, "video")
+    if problem:
+        return err(problem)
     if cam:  # suppress duplicate reports of the same crash from one camera
         dup = Accident.objects.filter(camera=cam, detected_at__gte=when - timedelta(minutes=2)).exclude(
             status="closed").first()
@@ -698,8 +742,8 @@ def ingest(request):
     sev = d.get("severity") if d.get("severity") in ("low", "medium", "high") else "medium"
     a = Accident.objects.create(
         camera=cam, latitude=lat, longitude=lng, detected_at=when, confidence=conf, severity=sev,
-        location=d.get("location") or (cam.road_name or cam.name if cam else ""),
-        accident_type=d.get("accident_type", "")[:60], vehicles=d.get("vehicles", "")[:200], people_count=people,
-        snapshot=request.FILES.get("snapshot"), video=request.FILES.get("video"))
+        location=str(d.get("location") or (cam.road_name or cam.name if cam else ""))[:255],
+        accident_type=str(d.get("accident_type") or "")[:60], vehicles=str(d.get("vehicles") or "")[:200],
+        people_count=people, snapshot=snapshot, video=video)
     services.process_accident(a)
     return Response({"accident_id": a.accident_id, "status": a.status}, status=201)

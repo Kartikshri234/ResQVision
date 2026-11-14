@@ -213,9 +213,22 @@
   /* ---------- maps (Leaflet + OpenStreetMap) ---------- */
   SC.makeMap = (el, o) => {
     if (!el) return null;
-    if (!window.L) { el.innerHTML = '<div class="empty">Map library could not load. An internet connection is required for map tiles.</div>'; return null; }
+    if (!window.L) {
+      const markers = o.markers || [];
+      el.innerHTML = `<div class="map-offline"><b>Map unavailable offline</b><div class="small muted">Incident locations are still available below.</div>${markers.length ? `<ul>${markers.map((m) => `<li>${esc(m.glyph || 'Incident')} &middot; ${Number(m.lat).toFixed(4)}, ${Number(m.lng).toFixed(4)}</li>`).join('')}</ul>` : '<div class="small muted mt8">No locations to display.</div>'}</div>`;
+      return null;
+    }
     const map = L.map(el).setView(o.center || [28.6139, 77.2090], o.zoom || 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    let tileErrorShown = false;
+    tileLayer.on('tileerror', () => {
+      if (tileErrorShown) return;
+      tileErrorShown = true;
+      const notice = document.createElement('div');
+      notice.className = 'map-offline';
+      notice.innerHTML = '<b>Map tiles unavailable</b><div class="small muted">Markers remain available; check the network connection to restore the map background.</div>';
+      el.appendChild(notice);
+    });
     const pts = [];
     (o.markers || []).forEach((m) => {
       const icon = L.divIcon({ className: '', html: `<div class="pin" style="background:${m.color || '#0B2A5B'}"><span>${esc(m.glyph || '')}</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] });

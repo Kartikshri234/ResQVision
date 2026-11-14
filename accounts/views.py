@@ -4,11 +4,13 @@ from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.mail import send_mail
 from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .models import OTP, User
@@ -26,6 +28,8 @@ def user_json(user):
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request):
         ident = (request.data.get("username") or "").strip()
@@ -86,19 +90,32 @@ def _find_user(identifier):
 
 
 class ForgotPasswordView(APIView):
-    """Step 1 - issue a one-time code. No SMS/e-mail gateway is wired in yet:
-    the code is printed to the server console, and returned as `dev_otp` when DEBUG=1."""
+    """Step 1 - issue a one-time code and e-mail it to the account's address (the console backend prints it
+    in development). With DEBUG=1 the code is also returned as `dev_otp`; it is never logged otherwise."""
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
 
     def post(self, request):
         user = _find_user(request.data.get("identifier"))
         payload = {"detail": "If the account exists, a verification code has been sent."}
         if user:
             otp = OTP.issue(user)
-            log.warning("[OTP] code for %s: %s", user.username, otp.code)
-            print(f"\n[ResQVision OTP] {user.username}: {otp.code}\n")
+            if user.email:
+                try:
+                    send_mail(
+                        "Your ResQVision verification code",
+                        f"Your ResQVision password-reset code is {otp.code}. It expires in 10 minutes.\n"
+                        "If you did not request it, you can ignore this message.",
+                        None, [user.email],
+                    )
+                except Exception:
+                    log.exception("Could not e-mail the password-reset code to %s", user.username)
+            else:
+                log.warning("Password reset requested for %s but the account has no e-mail address.", user.username)
             if settings.DEBUG:
+                log.warning("[OTP] code for %s: %s", user.username, otp.code)
                 payload["dev_otp"] = otp.code
         return Response(payload)
 
@@ -106,6 +123,8 @@ class ForgotPasswordView(APIView):
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
 
     def post(self, request):
         user = _find_user(request.data.get("identifier"))
@@ -119,6 +138,8 @@ class VerifyOTPView(APIView):
 class ResetPasswordView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
 
     def post(self, request):
         user = _find_user(request.data.get("identifier"))

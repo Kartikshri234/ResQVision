@@ -134,7 +134,7 @@ label.fld { display: block; font-size: 13px; font-weight: 600; margin-bottom: 12
 .hbar { margin: 8px 0; font-size: 13px; } .hbar .track { height: 9px; background: var(--lblue); border-radius: 6px; margin-top: 4px; overflow: hidden; } .hbar .track i { display: block; height: 100%; background: var(--navy-2); border-radius: 6px; }
 .donut { width: 110px; height: 110px; border-radius: 50%; display: grid; place-items: center; flex: none; } .donut div { width: 68px; height: 68px; background: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: var(--navy); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
-.map { width: 100%; height: 320px; border-radius: 16px; overflow: hidden; background: var(--lblue); z-index: 1; } .map.sm { height: 200px; } .map.full { height: calc(100vh - 230px); min-height: 320px; }
+.map { position: relative; width: 100%; height: 320px; border-radius: 16px; overflow: hidden; background: var(--lblue); z-index: 1; } .map.sm { height: 200px; } .map.full { height: calc(100vh - 230px); min-height: 320px; }
 .pin { width: 30px; height: 30px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); display: grid; place-items: center; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, .3); }
 .pin > span { transform: rotate(45deg); color: #fff; font-weight: 800; font-size: 12px; }
 .avatar { width: 76px; height: 76px; border-radius: 50%; background: var(--lblue); color: var(--navy); display: grid; place-items: center; font-size: 28px; font-weight: 800; margin: 0 auto; }
@@ -153,6 +153,8 @@ label.fld { display: block; font-size: 13px; font-weight: 600; margin-bottom: 12
 .modal h3 { margin-bottom: 12px; }
 @media (min-width: 900px) { .modal-bg { align-items: center; } .modal { border-radius: 22px; } }
 .leaflet-container { font-family: var(--font); }
+.map-offline { position: absolute; z-index: 500; top: 10px; left: 10px; right: 10px; padding: 10px 12px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
+.map-offline ul { margin: 8px 0 0 18px; padding: 0; }
 
 /* ================= Portal chrome (shared) ================= */
 [hidden] { display: none !important; }

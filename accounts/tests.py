@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import User
+from .models import OTP, User
 
 
 class AuthenticationFlowTests(TestCase):
@@ -36,3 +36,20 @@ class AuthenticationFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Invalid", response.data["detail"])
+
+    def test_otp_reset_consumes_code_and_allows_new_password(self):
+        otp = OTP.issue(self.user)
+        response = self.client.post(
+            "/api/auth/reset-password/",
+            {
+                "identifier": self.user.username,
+                "code": otp.code,
+                "new_password": "NewCorrectPassword9!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        otp.refresh_from_db()
+        self.assertTrue(otp.used)
+        self.assertTrue(self.user.__class__.objects.get(pk=self.user.pk).check_password("NewCorrectPassword9!"))

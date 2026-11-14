@@ -1,7 +1,16 @@
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import User
+
+
+def check_password_strength(password, user=None):
+    """Run Django's password validators, reporting failures as an API validation error (HTTP 400)."""
+    try:
+        validate_password(password, user)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({"password": list(exc.messages)})
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -67,7 +76,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
         password = validated.pop("password", "")
         if not password:
             raise serializers.ValidationError({"password": "A password is required."})
-        validate_password(password)
+        check_password_strength(password)
         validated.setdefault("is_approved", True)
         user = User(**validated)
         user.set_password(password)
@@ -79,7 +88,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
         for k, v in validated.items():
             setattr(instance, k, v)
         if password:
-            validate_password(password, instance)
+            check_password_strength(password, instance)
             instance.set_password(password)
         instance.save()
         return instance

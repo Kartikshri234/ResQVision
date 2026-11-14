@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 User = settings.AUTH_USER_MODEL
@@ -98,10 +98,13 @@ class Accident(models.Model):
         ordering = ["-detected_at"]
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        if not self.accident_id:
-            self.accident_id = f"RV-{1000 + self.pk}"
-            super().save(update_fields=["accident_id"])
+        # Atomic so the blank accident_id is never visible to another transaction: two concurrent inserts
+        # would otherwise collide on the unique constraint (PostgreSQL) before the real id is assigned.
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if not self.accident_id:
+                self.accident_id = f"RV-{1000 + self.pk}"
+                super().save(update_fields=["accident_id"])
 
     def __str__(self):
         return self.accident_id
