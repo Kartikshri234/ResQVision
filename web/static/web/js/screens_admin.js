@@ -30,7 +30,7 @@
         ${SC.ui.section('Last 7 days')}<div class="card">${bars(s.daily.map((t) => t.count), days)}</div>
         ${SC.ui.section('Recent accident alerts', 'View all', '/admin/accidents')}<div class="list">${s.recent.length ? s.recent.map((a) => SC.ui.accCard(a)).join('') : SC.ui.empty('No accidents yet', 'Use "Simulate accident" to try the workflow.', 'alert')}</div>`;
     },
-    mount: (el) => { const { m } = SC.state.adminHome; SC.makeMap(el.querySelector('#map'), { markers: m.accidents.map(SC.accidentMarker), center: [28.6139, 77.2090], zoom: 11 }); },
+    mount: (el) => { const { m } = SC.state.adminHome; SC.makeMap(el.querySelector('#map'), { markers: m.accidents.map(SC.accidentMarker), center: [28.6139, 77.2090], zoom: 11, key: 'admin-home' }); },
   });
   SC.actions.simulate = async () => {
     let cams;
@@ -222,7 +222,7 @@
         ${SC.ui.section('By status')}<div class="card">${hbars(statusItems)}</div>
         ${SC.ui.section('By hour of day')}<div class="card">${bars(d.hours, d.hours.map((_, h) => (h % 6 === 0 ? h : '')))}</div>
         ${SC.ui.section('Emergency responses')}<div class="card"><dl class="kv"><dt>Alerts sent</dt><dd>${d.alerts.total}</dd><dt>Responded</dt><dd>${d.alerts.responded}</dd><dt>Rejected</dt><dd>${d.alerts.rejected}</dd></dl></div>
-        ${SC.ui.section('AI detection statistics')}<div class="card"><dl class="kv"><dt>Auto-verified</dt><dd>${d.ai.auto_verified}</dd><dt>Simulated</dt><dd>${d.ai.simulated}</dd><dt>Active cameras</dt><dd>${d.ai.cameras}</dd></dl></div>`;
+        ${SC.ui.section('AI detection statistics')}<div class="card"><dl class="kv"><dt>Auto-verified</dt><dd>${d.ai.auto_verified}</dd><dt>Confirmed by an admin</dt><dd>${d.ai.manually_confirmed}</dd><dt>Dismissed as false alarm</dt><dd>${d.ai.false_alarms}</dd><dt>Simulated</dt><dd>${d.ai.simulated}</dd><dt>Active cameras</dt><dd>${d.ai.cameras}</dd></dl></div>`;
     },
   });
 

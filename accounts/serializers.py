@@ -31,16 +31,35 @@ class UserSerializer(serializers.ModelSerializer):
         return obj.get_full_name() or obj.username
 
     def get_police_station_name(self, obj):
-        return obj.police_station.name if obj.police_station_id else None
+        if obj.role != User.Role.POLICE:
+            return obj.police_station.name if obj.police_station_id else None
+        return obj.organization_name or None
 
     def get_hospital_name(self, obj):
-        return obj.hospital.name if obj.hospital_id else None
+        if obj.role != User.Role.HOSPITAL:
+            return obj.hospital.name if obj.hospital_id else None
+        return obj.organization_name or None
+
+
+def unique_email(value, instance=None):
+    """E-mail is a login identifier and a password-reset target, so two accounts must not share one."""
+    value = (value or "").strip()
+    if value:
+        clash = User.objects.filter(email__iexact=value)
+        if instance is not None:
+            clash = clash.exclude(pk=instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError("That e-mail address is already used by another account.")
+    return value
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["first_name", "last_name", "email", "phone"]
+
+    def validate_email(self, value):
+        return unique_email(value, self.instance)
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -61,6 +80,21 @@ class AdminUserSerializer(serializers.ModelSerializer):
     get_full_name = UserSerializer.get_full_name
     get_police_station_name = UserSerializer.get_police_station_name
     get_hospital_name = UserSerializer.get_hospital_name
+
+    def validate_email(self, value):
+        return unique_email(value, self.instance)
+
+    def validate(self, attrs):
+        """A police station / hospital can have only one login; refuse a link that would not grant access."""
+        role = attrs.get("role", self.instance.role if self.instance else None)
+        for field, wanted in (("police_station", User.Role.POLICE), ("hospital", User.Role.HOSPITAL)):
+            org = attrs.get(field)
+            if org is None or role != wanted:
+                continue
+            if org.account_id and (not self.instance or org.account_id != self.instance.pk):
+                raise serializers.ValidationError(
+                    {field: f"{org.name} is already linked to another login account."})
+        return attrs
 
     def validate_role(self, value):
         """Only the super admin may give out (or take away) the admin role."""

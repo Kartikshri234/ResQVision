@@ -82,7 +82,13 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "same-origin"
+# Not "same-origin": OpenStreetMap refuses tile requests that carry no Referer, which left the map blank.
+# This sends only the origin (never the path or query) to other sites, and the full URL to ourselves.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+CSP_ENABLED = env_bool("CSP_ENABLED", True)
+
+# Unanswered alerts are re-routed to the next nearest service after this many seconds.
+ALERT_RESPONSE_TIMEOUT_SECONDS = env_int("ALERT_RESPONSE_TIMEOUT_SECONDS", 180)
 X_FRAME_OPTIONS = "DENY"
 
 if not DEBUG:
@@ -113,6 +119,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "resqvision.middleware.SecurityHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -143,7 +150,8 @@ WSGI_APPLICATION = "resqvision.wsgi.application"
 
 # ---------------------------------------------------------------- Database
 # SQLite by default so the project runs out of the box (SQLITE_PATH overrides the file, used by the
-# browser tests so they never touch the shared demo database).
+# browser tests so they never touch the shared demo database). Keep the database OUTSIDE OneDrive/Dropbox:
+# cloud sync can lock or duplicate a live SQLite file and corrupt it (e.g. SQLITE_PATH=C:\resqvision\db.sqlite3).
 # PostgreSQL is used automatically when DB_NAME is set (plus DB_USER, DB_PASSWORD, DB_HOST, DB_PORT).
 if os.environ.get("DB_NAME"):
     DATABASES = {
@@ -205,6 +213,11 @@ REST_FRAMEWORK = {
     # Unexpected errors become a logged JSON 500 instead of an HTML page the frontend cannot read.
     "EXCEPTION_HANDLER": "resqvision.exceptions.api_exception_handler",
     # Brute-force protection for sign-in and the one-time-code password reset (per client IP).
+    # How many reverse proxies sit in front of Django. 0 = none: the client address is the socket address and a
+    # spoofed X-Forwarded-For header cannot be used to dodge the throttles. Behind nginx/a load balancer set
+    # NUM_PROXIES=1 (otherwise every user shares the proxy's address and the login limit locks everybody out).
+    # Throttle counters live in Django's cache: use a shared cache (Redis/Memcached) when running several workers.
+    "NUM_PROXIES": env_int("NUM_PROXIES", 0),
     "DEFAULT_THROTTLE_RATES": {
         "login": os.environ.get("THROTTLE_LOGIN", "20/min"),
         "otp": os.environ.get("THROTTLE_OTP", "10/min"),

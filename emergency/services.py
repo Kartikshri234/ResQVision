@@ -2,9 +2,12 @@
 import io
 import math
 import random
+from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
+from django.db import transaction
 from django.utils import timezone
 
 from .models import (Accident, Alert, Camera, Hospital, Notification, PoliceStation,
@@ -71,14 +74,27 @@ def dispatch_alerts(accident):
                        cfg.notify_radius_km, only_accepting=True):
         created.append(Alert.objects.create(accident=accident, kind="hospital", hospital=h,
                                             distance_km=round(d, 1)))
-    accident.status = "alert_sent"
-    accident.save(update_fields=["status"])
+    # Only claim "Alert Sent" when somebody was actually alerted.
+    if created:
+        accident.status = "alert_sent"
+        accident.save(update_fields=["status"])
     for al in created:
-        notify(al.org.account, f"🚨 New accident {accident.accident_id}",
-               f"{accident.get_severity_display()} severity · {accident.location or 'Unknown location'} · "
-               f"{al.distance_km} km away", accident)
+        if al.org.account_id:
+            notify(al.org.account, f"🚨 New accident {accident.accident_id}",
+                   f"{accident.get_severity_display()} severity · {accident.location or 'Unknown location'} · "
+                   f"{al.distance_km} km away", accident)
+        else:
+            # An organisation without a login can never see or answer the alert.
+            add_event(accident, f"{al.org_name} has no login account linked and cannot receive this alert")
+            notify_admins(f"Action needed: {accident.accident_id}",
+                          f"{al.org_name} ({al.kind}) has no login account, so it cannot respond.", accident)
     names = ", ".join(f"{al.org_name} ({al.kind})" for al in created) or "no registered services found"
     add_event(accident, f"Emergency alerts sent to: {names}")
+    for kind in ("police", "hospital"):
+        if not any(al.kind == kind for al in created):
+            add_event(accident, f"No {kind} service is available to alert.")
+            notify_admins(f"Action needed: {accident.accident_id}",
+                          f"No {kind} service could be alerted. Contact one manually.", accident)
     notify_admins(f"Alerts sent for {accident.accident_id}", f"{len(created)} service(s) notified.", accident)
     return created
 
@@ -104,6 +120,42 @@ def escalate(accident, kind):
            f"{accident.get_severity_display()} severity · {accident.location or 'Unknown location'} · {al.distance_km} km away",
            accident)
     return al
+
+
+def alert_timeout():
+    return timedelta(seconds=getattr(settings, "ALERT_RESPONSE_TIMEOUT_SECONDS", 180))
+
+
+def escalate_stale_alerts(now=None):
+    """Re-route alerts nobody answered within the timeout (default 3 minutes).
+
+    A pending alert past the deadline is closed as rejected ("no response") and escalate() sends the request
+    to the next nearest service, exactly as if the organisation had rejected it. Returns the number handled.
+    Safe to run often and from several processes: each alert is locked and re-checked before it is changed.
+    """
+    if alert_timeout().total_seconds() <= 0:  # ALERT_RESPONSE_TIMEOUT_SECONDS=0 switches this off
+        return 0
+    now = now or timezone.now()
+    cutoff = now - alert_timeout()
+    ids = list(Alert.objects.filter(status="pending", created_at__lte=cutoff)
+               .exclude(accident__status__in=["closed", "resolved"]).values_list("pk", flat=True))
+    handled = 0
+    for pk in ids:
+        with transaction.atomic():
+            al = (Alert.objects.select_related("accident", "police_station", "hospital")
+                  .select_for_update(of=("self",)).filter(pk=pk, status="pending").first())
+            if al is None:  # answered while we were looking
+                continue
+            minutes = max(1, round(alert_timeout().total_seconds() / 60))
+            al.status, al.reject_reason = "rejected", f"No response within {minutes} min (automatic)"
+            al.save()
+            acc = al.accident
+            add_event(acc, f"{al.org_name} did not respond within {minutes} min", "System")
+            escalate(acc, al.kind)
+            sync_status(acc)
+            notify_admins(f"No response: {acc.accident_id}", f"{al.org_name} ({al.kind}) did not answer in time.", acc)
+            handled += 1
+    return handled
 
 
 # ---------- pipeline ----------
@@ -138,13 +190,14 @@ def sync_status(accident):
     if accident.status in ("closed", "verification_pending", "detected"):
         return
     live = list(accident.alerts.exclude(status="rejected").values_list("status", flat=True))
+    open_ = [s for s in live if s != "resolved"]
     if not live:
         new = "alert_sent"
-    elif all(s == "resolved" for s in live):
+    elif not open_:
         new = "resolved"
     else:
-        new = {1: "alert_sent", 2: "accepted", 3: "team_dispatched", 4: "arrived", 5: "arrived"}[
-            max(RANK[s] for s in live)]
+        # Judge by the services still working: one that already finished must not make the rest look further along.
+        new = {1: "alert_sent", 2: "accepted", 3: "team_dispatched", 4: "arrived"}[max(RANK[s] for s in open_)]
     if new != accident.status:
         accident.status = new
         accident.save(update_fields=["status"])

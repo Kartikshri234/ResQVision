@@ -53,3 +53,13 @@ class AuthenticationFlowTests(TestCase):
         otp.refresh_from_db()
         self.assertTrue(otp.used)
         self.assertTrue(self.user.__class__.objects.get(pk=self.user.pk).check_password("NewCorrectPassword9!"))
+
+    def test_shared_email_never_picks_an_arbitrary_account(self):
+        User.objects.create_user(username="second-user", password="OtherPassword9!", email="USER@example.com",
+                                 role=User.Role.POLICE, is_approved=True)
+        # Two accounts share this e-mail: login by e-mail must fail and a reset code must not be issued.
+        response = self.client.post("/api/auth/login/", {"username": "user@example.com",
+                                                         "password": "CorrectPassword9!"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.client.post("/api/auth/forgot-password/", {"identifier": "user@example.com"}, format="json")
+        self.assertFalse(OTP.objects.exists())

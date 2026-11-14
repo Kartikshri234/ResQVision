@@ -33,8 +33,8 @@ class User(AbstractUser):
         if self.is_superuser:
             self.role = self.Role.ADMIN
             self.is_approved = True
-        if self.role == self.Role.ADMIN:
-            self.is_staff = True
+        # Only admins may open the Django admin site; demoting an admin removes that access again.
+        self.is_staff = self.is_superuser or self.role == self.Role.ADMIN
         super().save(*args, **kwargs)
         self._link_organization()
 
@@ -51,12 +51,22 @@ class User(AbstractUser):
         model.objects.filter(pk=getattr(self, field + "_id"), account__isnull=True).update(account=self)
 
     @property
+    def organization(self):
+        """The organisation this login belongs to.
+
+        Access is decided by the organisation's `account` link (police_profile / hospital_profile); the
+        police_station / hospital foreign keys are only a hint set in the admin form. Prefer the real link.
+        """
+        if self.role == self.Role.POLICE:
+            return getattr(self, "police_profile", None) or self.police_station
+        if self.role == self.Role.HOSPITAL:
+            return getattr(self, "hospital_profile", None) or self.hospital
+        return None
+
+    @property
     def organization_name(self):
-        if self.role == self.Role.POLICE and self.police_station:
-            return self.police_station.name
-        if self.role == self.Role.HOSPITAL and self.hospital:
-            return self.hospital.name
-        return ""
+        org = self.organization
+        return org.name if org else ""
 
 
 class OTP(models.Model):

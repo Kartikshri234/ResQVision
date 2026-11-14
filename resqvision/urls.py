@@ -1,5 +1,3 @@
-from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
@@ -10,5 +8,6 @@ urlpatterns = [
     path("", include("web.urls")),             # HTML / CSS / JS frontend
 ]
 
-# Evidence images / videos are served by Django in development.
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# MEDIA_ROOT is deliberately NOT served as public static files: accident evidence is delivered by
+# /api/accidents/<id>/evidence/<snapshot|video>/, which checks that the user may see that accident.
+# Do not expose MEDIA_ROOT through nginx/Apache either.

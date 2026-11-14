@@ -8,4 +8,7 @@ venv/
 .idea/
 .vscode/
 ai_service/output/
+evidence/
+staticfiles/
+browser_tests/artifacts/
 *.pt

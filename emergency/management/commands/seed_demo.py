@@ -3,7 +3,8 @@ import random
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from emergency import services
@@ -47,8 +48,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--no-accidents", action="store_true", help="Skip sample accident records.")
+        parser.add_argument("--allow-production", action="store_true",
+                            help="Run even though DJANGO_DEBUG is off (creates accounts with PUBLISHED passwords).")
 
     def handle(self, *args, **opts):
+        if not settings.DEBUG and not opts["allow_production"]:
+            raise CommandError(
+                "seed_demo creates accounts with well-known passwords (admin / Admin@123, ...). It only runs "
+                "when DJANGO_DEBUG=1. Use `create_superadmin` for a real deployment.")
         SystemSetting.get()
         if not User.objects.filter(username="admin").exists():
             User.objects.create_superuser("admin", "admin@resqvision.ai", "Admin@123", first_name="System Admin")

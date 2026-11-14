@@ -9,6 +9,7 @@ urlpatterns = [
     path("map/", v.map_data),
     path("accidents/", v.accidents),
     path("accidents/<int:pk>/", v.accident_detail),
+    path("accidents/<int:pk>/evidence/<str:kind>/", v.evidence),
     path("accidents/<int:pk>/confirm/", v.accident_confirm),
     path("accidents/<int:pk>/close/", v.accident_close),
     path("alerts/<int:pk>/respond/", v.alert_respond),

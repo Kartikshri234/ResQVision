@@ -1,7 +1,7 @@
 /* Police and hospital screens: dashboards, alert lists, dispatch / response management, ambulances, capacity. */
 (function () {
   const { esc, icon } = SC;
-  const POLICE = ['police'], HOSP = ['hospital', 'ambulance'];
+  const POLICE = ['police'], HOSP = ['hospital'];   // ambulance users have their own screen (/ambulance)
   const POLICE_TABS = [['New Alerts', '/police/alerts'], ['Active', '/police/active'], ['History', '/police/history']];
   const HOSP_TABS = [['Alerts', '/hospital/alerts'], ['Response', '/hospital/response'], ['History', '/hospital/history']];
   const mineStatus = (a) => (a.my_alert ? a.my_alert.status : '');
@@ -98,8 +98,9 @@
   respond('police', '/police/dispatch/:id');
   respond('hospital', '/hospital/respond/:id');
 
-  SC.actions.pick = (el) => { document.querySelectorAll('#picks .pick').forEach((p) => p.classList.remove('sel')); el.classList.add('sel'); };
-  SC.actions['team-preset'] = (el) => { const input = document.querySelector('form[data-form=dispatch-team] [name=team_name]'); if (input) input.value = el.dataset.team; };
+  // Choosing an ambulance / team preset is not an <input> focus, so flag it or the 8 s auto-refresh would erase it.
+  SC.actions.pick = (el) => { SC.state.dirty = true; document.querySelectorAll('#picks .pick').forEach((p) => p.classList.remove('sel')); el.classList.add('sel'); };
+  SC.actions['team-preset'] = (el) => { SC.state.dirty = true; const input = document.querySelector('form[data-form=dispatch-team] [name=team_name]'); if (input) input.value = el.dataset.team; };
   SC.forms['dispatch-team'] = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
     await SC.respond(form.dataset.alert, { action: 'dispatch', team_name: SC.formData(form).team_name });
     SC.toast('Team dispatched', 'success'); SC.render();

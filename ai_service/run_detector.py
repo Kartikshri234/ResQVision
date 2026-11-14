@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -47,6 +48,8 @@ def parse_args():
     p.add_argument("--pre-seconds", type=float, default=3.0, help="clip seconds before the accident")
     p.add_argument("--post-seconds", type=float, default=3.0, help="clip seconds after the accident")
     p.add_argument("--loop", action="store_true", help="restart a video file when it ends")
+    p.add_argument("--max-reconnects", type=int, default=20,
+                   help="how many times to re-open a webcam / RTSP / HTTP stream that drops (default 20)")
     p.add_argument("--show", action="store_true", help="show a live preview window (press q to quit)")
     p.add_argument("--dry-run", action="store_true", help="detect and save evidence locally but do not send")
     p.add_argument("--evidence-dir", default="evidence", help="where snapshots and clips are kept")
@@ -112,21 +115,40 @@ def main():
     ring = deque(maxlen=max(1, int(args.pre_seconds * eff_fps)))
     post_target = max(1, int(args.post_seconds * eff_fps))
     pending = None  # {event, frames, snapshot, detected_at}
-    last_event_time = 0.0
+    last_event_time = float("-inf")
     last_beat = 0.0
     frame_idx = 0
+    reconnects = 0
+    is_stream = str(args.source).isdigit() or str(args.source).startswith(("rtsp", "http"))
+    workers = []
+
+    def dispatch(done):
+        """Encode + upload on a background thread so a slow or offline backend never stalls detection."""
+        worker = threading.Thread(target=deliver, args=(done, args, client, eff_fps), name="deliver")
+        worker.start()
+        workers.append(worker)
     print(f"[resqvision] source={args.source} camera={args.camera_id or 'mobile GPS'} fps={fps:.1f} stride={args.stride} -> {'DRY RUN' if args.dry_run else args.api_url}")
 
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
-                if args.loop and not str(args.source).isdigit() and not str(args.source).startswith(("rtsp", "http")):
+                if args.loop and not is_stream:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+                if is_stream and reconnects < args.max_reconnects:
+                    # A dropped camera / RTSP stream is normal: re-open it instead of ending the program.
+                    reconnects += 1
+                    print(f"[resqvision] stream dropped; reconnecting ({reconnects}/{args.max_reconnects})")
+                    cap.release()
+                    time.sleep(min(30, 2 * reconnects))
+                    cap = open_source(args.source)
                     continue
                 print("[resqvision] end of stream")
                 break
+            reconnects = 0
             frame_idx += 1
+            video_time = frame_idx / fps  # seconds of video, so the cooldown also works for files read faster than real time
             if frame_idx % args.stride:
                 continue
 
@@ -148,12 +170,12 @@ def main():
                 pending["frames"].append(annotated)
                 pending["left"] -= 1
                 if pending["left"] <= 0:
-                    deliver(pending, args, client, eff_fps)
+                    dispatch(pending)  # background thread: a slow or offline backend must not stall detection
                     pending = None
 
-            if events and pending is None and time.time() - last_event_time > args.cooldown:
+            if events and pending is None and video_time - last_event_time > args.cooldown:
                 event = max(events, key=lambda e: e.confidence)
-                last_event_time = time.time()
+                last_event_time = video_time
                 marked = draw(frame.copy(), dets, event)
                 stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 snap = os.path.join(args.evidence_dir, f"accident_{stamp}.jpg")
@@ -169,7 +191,9 @@ def main():
         print("\n[resqvision] stopped")
     finally:
         if pending is not None:
-            deliver(pending, args, client, eff_fps)
+            dispatch(pending)
+        for worker in workers:  # let queued uploads finish before the program exits
+            worker.join()
         cap.release()
         cv2.destroyAllWindows()
 

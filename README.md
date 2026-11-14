@@ -21,7 +21,7 @@ response through resolution.
 
 ## Technology
 
-- Python and Django 4.2-5.x
+- Python and Django 5.x
 - Django REST Framework
 - HTML, CSS, and vanilla JavaScript frontend with Leaflet maps
 - Pillow for generated and uploaded accident evidence

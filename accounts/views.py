@@ -1,9 +1,11 @@
 import logging
+import secrets
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db.models import Q
 from rest_framework import viewsets
@@ -36,9 +38,10 @@ class LoginView(APIView):
         password = request.data.get("password") or ""
         user = authenticate(request, username=ident, password=password)
         if user is None and "@" in ident:
-            match = User.objects.filter(email__iexact=ident).first()
-            if match:
-                user = authenticate(request, username=match.username, password=password)
+            # Only when exactly one account has this e-mail: never guess between two users who share it.
+            matches = list(User.objects.filter(email__iexact=ident)[:2])
+            if len(matches) == 1:
+                user = authenticate(request, username=matches[0].username, password=password)
         if user is None:
             return Response({"detail": "Invalid username or password."}, status=400)
         if not user.is_approved:
@@ -80,13 +83,45 @@ class ChangePasswordView(APIView):
         return Response({"detail": "Password changed."})
 
 
+OTP_MAX_FAILURES = 5
+
+
+def _same_code(expected, given):
+    """Constant-time comparison (bytes, so a non-ASCII guess cannot raise)."""
+    return secrets.compare_digest(expected.encode(), given.encode())
+
+
+def _otp_failed(user):
+    """Count a wrong code for this ACCOUNT (the per-IP throttle alone lets a spread-out attacker keep guessing).
+
+    After OTP_MAX_FAILURES wrong codes every outstanding code for the account is burned and a new one must
+    be requested. The failure counter lives in the cache; burning the codes is stored in the database, so the
+    lock-out holds even when the cache is per-process.
+    """
+    if user is None:
+        return
+    key = f"otp-fail:{user.pk}"
+    cache.add(key, 0, 600)
+    try:
+        count = cache.incr(key)
+    except ValueError:  # key expired between add() and incr()
+        cache.set(key, 1, 600)
+        count = 1
+    if count >= OTP_MAX_FAILURES:
+        user.otps.filter(used=False).update(used=True)
+        cache.delete(key)
+
+
 def _find_user(identifier):
     identifier = (identifier or "").strip()
     if not identifier:
         return None
-    return User.objects.filter(
+    matches = list(User.objects.filter(
         Q(username__iexact=identifier) | Q(email__iexact=identifier) | Q(phone=identifier)
-    ).first()
+    )[:2])
+    # E-mail and phone are not unique. If the identifier matches two accounts, do not pick one at random
+    # (that could send a reset code for, or reset the password of, the wrong person): use the username instead.
+    return matches[0] if len(matches) == 1 else None
 
 
 class ForgotPasswordView(APIView):
@@ -130,7 +165,8 @@ class VerifyOTPView(APIView):
         user = _find_user(request.data.get("identifier"))
         code = (request.data.get("code") or "").strip()
         otp = user.otps.filter(used=False).order_by("-created_at").first() if user else None
-        if not otp or not otp.is_valid() or otp.code != code:
+        if not otp or not otp.is_valid() or not _same_code(otp.code, code):
+            _otp_failed(user)
             return Response({"detail": "Invalid or expired code."}, status=400)
         return Response({"detail": "Code verified."})
 
@@ -146,7 +182,8 @@ class ResetPasswordView(APIView):
         code = (request.data.get("code") or "").strip()
         new = request.data.get("new_password") or ""
         otp = user.otps.filter(used=False).order_by("-created_at").first() if user else None
-        if not otp or not otp.is_valid() or otp.code != code:
+        if not otp or not otp.is_valid() or not _same_code(otp.code, code):
+            _otp_failed(user)
             return Response({"detail": "Invalid or expired code."}, status=400)
         try:
             validate_password(new, user)
@@ -184,6 +221,10 @@ class UserAdminViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         self._check_can_touch(serializer.instance)
+        if serializer.instance.pk == self.request.user.pk:
+            data = serializer.validated_data
+            if data.get("is_active") is False or data.get("is_approved") is False:
+                raise ValidationError("You cannot deactivate or block your own account.")
         serializer.save()
 
     def perform_destroy(self, instance):

@@ -29,13 +29,13 @@
 
 ## Follow-up status (2026-11-14, after code review)
 
-Nothing below was executed by the reviewer; run the commands in the last column to confirm.
+Items marked closed were confirmed by the project owner running the commands in the last column. Items still open need the checks named there.
 
 | Item | Status | What changed | Confirm with |
 |---|---|---|---|
 | 3. Narrow coverage | Mostly closed | `emergency/tests_workflow.py` already covers dispatch, escalation, admin CRUD, role scoping, notifications, analytics, settings. Still untested: file-upload edge cases beyond ingest checks, management commands | `python manage.py test` |
 | 6. Dev secrets / OTP | Closed | `settings.py` only falls back to dev keys when `DJANGO_DEBUG=1`; otherwise it refuses to start. `dev_otp` is returned only in debug | `python manage.py check --deploy` with prod env |
-| 1. Browser journeys | Written, not yet run | `browser_tests/run_journeys.py`: bad login, police accept + timeline + sign out, reject needs reason, admin confirm, hospital dashboard, map with CDN blocked. Uses a temp DB | `python browser_tests/run_journeys.py` |
+| 1. Browser journeys | Closed (run and confirmed by project owner, 2026-11-15) | `browser_tests/run_journeys.py`: bad login, police accept + timeline + sign out, reject needs reason, admin confirm, hospital dashboard, map with CDN blocked. Uses a temp DB | `python browser_tests/run_journeys.py` |
 | 2. PostgreSQL | Open | `alert_respond` now runs in one transaction with a row lock (`select_for_update(of=("self",))`) and locks the ambulance it assigns. No-op on SQLite, so only a Postgres run proves it | CI `postgres` job |
 | 4. AI detector runtime | Open | Unchanged | `ai_service/run_detector.py --dry-run` on a sample video |
 | 5. CDN map | Open | Unchanged (degraded state exists) | Vendoring Leaflet is the remaining fix |
@@ -113,21 +113,32 @@ journeys remain outstanding.
 | Administrator live monitoring | PASS | Verification queue, active incidents, and cameras rendered |
 | Administrator accidents and analytics | PASS | Filters, accident list, charts/statistics rendered |
 | Administrator profile and notifications | PASS | Profile details and notification empty state rendered |
-| Administrator console | PASS (API regression) | `/api/admin/overview/` returns 200 for admins and 403 for non-admins; browser replay still pending |
+| Administrator console | PASS (API regression) | `/api/admin/overview/` returns 200 for admins and 403 for non-admins; browser replay added as `j_admin_console_overview` (run `browser_tests/run_journeys.py` to confirm) |
 | Police login and dashboard | PASS | Dashboard showed assigned incidents and notification count |
 | Police accident detail | PASS | RV-1004 detail, response status, timeline tabs, and route link rendered |
 | Hospital login and dashboard | PASS | Bed capacity, ambulance count, alerts, and active responses rendered |
 | Hospital emergency alerts | PASS | Pending alerts and Accept/Reject controls rendered |
 
-### Frontend issues observed
+### Frontend issues observed (status: journeys added, awaiting a run)
 
-1. **Browser replay of the admin console is still pending.** The underlying
-   overview endpoint now has authenticated regression coverage and returns the
-   expected console sections.
-2. **Map tiles may still fail/abort from OpenStreetMap tile URLs.** The map
-   shell and markers remain usable, and the UI now reports the degraded state
-   with coordinates when tiles or Leaflet are unavailable.
-3. **Mutation actions were not clicked against the shared demo database** to
-   avoid changing seeded accident/user data. Accept, reject, dispatch, confirm,
-   CRUD, and settings-save controls were verified as visible, but their complete
-   browser workflows still need isolated test data.
+1. **Browser replay of the admin console.** Added `j_admin_console_overview`: it signs in
+   as an admin, opens `/admin/console`, and checks the task cards, both organisation tables
+   (including the linked login account) and that no page error occurs. The overview endpoint
+   keeps its API regression test.
+2. **Map tiles from OpenStreetMap.** The tile layer now uses the single
+   `https://tile.openstreetmap.org/{z}/{x}/{y}.png` host (the `{s}` subdomains are deprecated),
+   sends a Referer (`referrerPolicy` plus `SECURE_REFERRER_POLICY`), and carries the required
+   attribution link. The CSP already allowed that host. `j_map_tiles_request_shape` fakes the
+   tiles locally and asserts every tile request is made with a Referer; it is skipped when
+   Leaflet cannot be downloaded. `j_map_degrades_without_cdn` still covers the blocked case.
+   Whether the real OSM servers accept the requests can only be seen on a machine with internet.
+3. **Mutation workflows on isolated data.** The journeys run on a temporary database (never the
+   demo one), so they now click the real controls:
+   - `j_police_dispatch_to_resolved`: team preset survives the 8 s auto-refresh, dispatch, arrive, resolve.
+   - `j_hospital_accept_and_assign_ambulance`: accept, refusal without a selection, selection
+     survives the auto-refresh, dispatch, ambulance marked busy.
+   - `j_admin_hospital_crud`: create, rejected coordinates, rejected `available > total`, edit,
+     delete blocked for a hospital with alert history, delete of one without.
+   - `j_admin_settings_save`: settings saved and read back from the database.
+   - Earlier journeys already cover accept, reject (reason required) and admin confirm.
+   Still not covered: user and camera CRUD, police-station CRUD, ambulance management screens.

@@ -219,7 +219,9 @@
       return null;
     }
     const map = L.map(el).setView(o.center || [28.6139, 77.2090], o.zoom || 13);
-    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    // OSM's tile policy: use the single tile.openstreetmap.org host (the a/b/c subdomains are deprecated), send a
+    // Referer (referrerPolicy) and credit OpenStreetMap with a link.
+    const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors', referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(map);
     let tileErrorShown = false;
     tileLayer.on('tileerror', () => {
       if (tileErrorShown) return;
@@ -237,8 +239,15 @@
       pts.push([m.lat, m.lng]);
     });
     (o.lines || []).forEach((l) => L.polyline(l.points, { color: l.color || '#163F82', dashArray: '6 8', weight: 4 }).addTo(map));
-    if (pts.length > 1 && o.fit !== false) map.fitBounds(pts, { padding: [34, 34], maxZoom: 15 });
+    // Screens that refresh themselves pass a `key` so the map keeps the user's pan / zoom between refreshes.
+    const saved = o.key && SC.state.mapViews && SC.state.mapViews[o.key];
+    if (saved) map.setView(saved.center, saved.zoom);
+    else if (pts.length > 1 && o.fit !== false) map.fitBounds(pts, { padding: [34, 34], maxZoom: 15 });
     else if (pts.length === 1) map.setView(pts[0], o.zoom || 15);
+    if (o.key) {
+      SC.state.mapViews = SC.state.mapViews || {};
+      map.on('moveend', () => { SC.state.mapViews[o.key] = { center: map.getCenter(), zoom: map.getZoom() }; });
+    }
     setTimeout(() => map.invalidateSize(), 80);
     return map;
   };
@@ -246,10 +255,15 @@
   SC.accidentMarker = (a) => ({ lat: a.latitude, lng: a.longitude, color: SC.SEV_COLOR[a.severity], glyph: '!', popup: `<b>${esc(a.accident_id)}</b><br>${esc(a.accident_type || a.status_label || '')}<br><a href="javascript:void(0)" onclick="SC.go('/accident/${a.id}')">View details</a>` });
 
   /* ---------- sound ---------- */
+  // One shared AudioContext: browsers cap how many may exist, so creating one per alert silenced the beep
+  // after a handful of alerts. It also needs resume() when the browser suspended it.
+  let audioCtx = null;
   SC.beep = () => {
     if (SC.store.get('sound', true) === false) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const ctx = audioCtx;
       [0, 0.22].forEach((t) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.15, ctx.currentTime + t); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.15); });
     } catch (e) { /* audio unavailable */ }
   };
@@ -336,6 +350,8 @@
     if (!match) return SC.go(SC.state.user ? SC.homeFor() : '/login');
     const { def, params } = match;
     SC.clearTimers();
+    SC.state.dirty = false;   // a fresh screen has no half-made choices to protect from the auto-refresh
+    SC.state.mapViews = {};
     const user = SC.state.user;
     if (!def.public && !user) return SC.go('/login');
     if (def.roles && !def.roles.includes(user.role)) return SC.go(SC.homeFor());
@@ -360,7 +376,8 @@
     if (def.live && SC.store.get('live', true) !== false) {
       SC.state.timers.push(setInterval(async () => {
         const ae = document.activeElement;
-        if (SC.modalOpen() || (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) || document.hidden) return;
+        // Do not repaint under someone who is typing, has a dialog open, or picked something (SC.state.dirty).
+        if (SC.modalOpen() || SC.state.dirty || (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) || document.hidden) return;
         try { await paint(false); } catch (e) { /* keep last good screen */ }
       }, def.live));
     }

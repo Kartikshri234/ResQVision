@@ -3,26 +3,31 @@ police and hospital users only see accidents their organisation was alerted abou
 from datetime import timedelta
 from functools import wraps
 import hmac
+import logging
 import math
+import mimetypes
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Avg, Count, Q
+from django.db.models.functions import ExtractHour, TruncDate
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.views.decorators.http import require_GET
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from accounts.views import user_json
-
 from . import services
 from .models import (Accident, Alert, Ambulance, Camera, Hospital, Notification, PoliceStation,
-                     SystemSetting)
+                     SystemSetting, TimelineEvent)
 
 User = get_user_model()
+log = logging.getLogger("resqvision")
 ACTIVE = ["confirmed", "alert_sent", "accepted", "team_dispatched", "arrived"]
 DONE = ["resolved", "closed"]
 
@@ -98,7 +103,9 @@ def accident_json(a, user, detail=False):
         "camera": a.camera.camera_id if a.camera else "", "camera_name": a.camera.name if a.camera else "",
         "accident_type": a.accident_type, "confidence": round(a.confidence * 100),
         "severity": a.severity, "vehicles": a.vehicles, "people_count": a.people_count,
-        "snapshot": a.snapshot.url if a.snapshot else "", "video": a.video.url if a.video else "",
+        # Evidence is served by evidence() below, which checks the signed-in user may see this accident.
+        "snapshot": f"/api/accidents/{a.id}/evidence/snapshot/" if a.snapshot else "",
+        "video": f"/api/accidents/{a.id}/evidence/video/" if a.video else "",
         "status": a.status, "status_label": a.get_status_display(), "is_simulated": a.is_simulated,
         "police_status": kind_status(alerts, "police"), "hospital_status": kind_status(alerts, "hospital"),
         "my_alert": mine,
@@ -115,15 +122,45 @@ def detail(pk, user):
     return accident_json(get_object_or_404(base_qs(), pk=pk), user, True)
 
 
-def org_json(o, kind):
+def _hospitals():
+    """Hospitals with their ambulance counts computed in the same query (instead of 2 queries each)."""
+    return Hospital.objects.annotate(
+        n_amb=Count("ambulances", distinct=True),
+        n_free=Count("ambulances", filter=Q(ambulances__status="available"), distinct=True))
+
+
+def org_json(o, kind, admin=False):
+    """`admin=True` also reveals the login username; other roles must not learn who can sign in where."""
     d = {"id": o.id, "kind": kind, "name": o.name, "address": o.address, "latitude": o.latitude,
-         "longitude": o.longitude, "phone": o.phone, "is_active": o.is_active,
-         "account": o.account.username if o.account_id else ""}
+         "longitude": o.longitude, "phone": o.phone, "is_active": o.is_active}
+    if admin:
+        d["account"] = o.account.username if o.account_id else ""
     if kind == "hospital":
+        n_amb, n_free = getattr(o, "n_amb", None), getattr(o, "n_free", None)
         d.update(accepting_emergencies=o.accepting_emergencies, total_beds=o.total_beds,
-                 available_beds=o.available_beds, ambulances=o.ambulances.count(),
-                 ambulances_available=o.ambulances.filter(status="available").count())
+                 available_beds=o.available_beds,
+                 ambulances=n_amb if n_amb is not None else o.ambulances.count(),
+                 ambulances_available=(n_free if n_free is not None
+                                       else o.ambulances.filter(status="available").count()))
     return d
+
+
+def daily_counts(qs, days):
+    """Accidents per local day for the last `days` days, using ONE grouped query."""
+    today = timezone.localdate()
+    rows = (qs.filter(detected_at__date__gte=today - timedelta(days=days - 1))
+            .annotate(d=TruncDate("detected_at")).values("d").annotate(n=Count("id")).order_by())
+    by_day = {r["d"]: r["n"] for r in rows}
+    out = []
+    for i in range(days - 1, -1, -1):
+        day = today - timedelta(days=i)
+        out.append({"date": day.strftime("%d %b"), "count": by_day.get(day, 0)})
+    return out
+
+
+def false_alarm_count():
+    """Dismissed detections: closed without any service ever being alerted."""
+    return Accident.objects.filter(status="closed", alerts__isnull=True).count()
 
 
 def camera_json(c):
@@ -138,16 +175,15 @@ def dashboard(request):
     u = request.user
     qs = scoped(u).distinct()
     if u.role == "admin":
-        now = timezone.localtime()
-        daily = [{"date": (now - timedelta(days=i)).strftime("%d %b"),
-                  "count": Accident.objects.filter(detected_at__date=(now - timedelta(days=i)).date()).count()}
-                 for i in range(6, -1, -1)]
+        daily = daily_counts(Accident.objects.all(), 7)
+        false_alarms = false_alarm_count()
         return Response({
             "role": "admin",
             "total": Accident.objects.count(),
             "active": Accident.objects.filter(status__in=ACTIVE).count(),
             "pending_responses": Alert.objects.filter(status="pending").exclude(accident__status="closed").count(),
-            "resolved": Accident.objects.filter(status__in=DONE).count(),
+            "resolved": Accident.objects.filter(status__in=DONE).count() - false_alarms,
+            "false_alarms": false_alarms,
             "verification_pending": Accident.objects.filter(status="verification_pending").count(),
             "hospitals": Hospital.objects.filter(is_active=True).count(),
             "police": PoliceStation.objects.filter(is_active=True).count(),
@@ -182,7 +218,7 @@ def map_data(request):
         "accidents": [{"id": a.id, "accident_id": a.accident_id, "latitude": a.latitude,
                        "longitude": a.longitude, "severity": a.severity, "status": a.status,
                        "status_label": a.get_status_display(), "location": a.location} for a in accs],
-        "hospitals": [org_json(h, "hospital") for h in Hospital.objects.filter(is_active=True)],
+        "hospitals": [org_json(h, "hospital") for h in _hospitals().filter(is_active=True)],
         "police": [org_json(p, "police") for p in PoliceStation.objects.filter(is_active=True)],
         "cameras": [camera_json(c) for c in Camera.objects.filter(is_active=True)] if u.role == "admin" else [],
         "me": {"kind": u.role, "id": org.id} if org else None,
@@ -224,6 +260,39 @@ def accidents(request):
 def accident_detail(request, pk):
     a = get_object_or_404(scoped(request.user).distinct(), pk=pk)
     return Response(accident_json(a, request.user, True))
+
+
+def _can_view_accident(user, pk):
+    if user.role == "admin":
+        return True
+    org = my_org(user)
+    if not org:
+        return False
+    field = "police_station" if user.role == "police" else "hospital"
+    return Alert.objects.filter(accident_id=pk, **{field: org}).exists()
+
+
+@require_GET
+def evidence(request, pk, kind):
+    """Snapshot / video of an accident, only for signed-in users who may see that accident.
+
+    Evidence can show victims and number plates, so it is never served as a public static file.
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse(status=403)
+    if kind not in ("snapshot", "video") or not _can_view_accident(request.user, pk):
+        return HttpResponse(status=404)
+    a = get_object_or_404(Accident, pk=pk)
+    f = a.snapshot if kind == "snapshot" else a.video
+    if not f:
+        return HttpResponse(status=404)
+    try:
+        handle = f.open("rb")
+    except (FileNotFoundError, ValueError):
+        return HttpResponse(status=404)
+    resp = FileResponse(handle, content_type=mimetypes.guess_type(f.name)[0] or "application/octet-stream")
+    resp["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 
 @api_view(["POST"])
@@ -331,19 +400,36 @@ def _alert_respond(request, pk):
 
 
 # ---------------------------------------------------------------- hospitals / police stations
+def _coord(raw, label, limit):
+    """A finite number within +-limit (rejects 'nan', 'inf' and impossible coordinates)."""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be a number.")
+    if not math.isfinite(value) or abs(value) > limit:
+        raise ValueError(f"{label} must be between -{limit} and {limit}.")
+    return value
+
+
 def _apply_org(o, kind, d):
     for f in ("name", "address", "phone"):
         if f in d:
             setattr(o, f, str(d[f] or "").strip())
-    for f in ("latitude", "longitude"):
-        if f in d:
-            setattr(o, f, float(d[f]))
+    if "latitude" in d:
+        o.latitude = _coord(d["latitude"], "Latitude", 90)
+    if "longitude" in d:
+        o.longitude = _coord(d["longitude"], "Longitude", 180)
     if "is_active" in d:
         o.is_active = bool(d["is_active"])
     if kind == "hospital":
         for f in ("total_beds", "available_beds"):
             if f in d:
-                setattr(o, f, max(0, int(d[f])))
+                try:
+                    setattr(o, f, max(0, int(d[f])))
+                except (TypeError, ValueError):
+                    raise ValueError("Bed counts must be whole numbers.")
+        if ("total_beds" in d or "available_beds" in d) and o.available_beds > o.total_beds:
+            raise ValueError("Available beds cannot exceed total beds.")
         if "accepting_emergencies" in d:
             o.accepting_emergencies = bool(d["accepting_emergencies"])
     if "account_username" in d:
@@ -357,6 +443,19 @@ def _apply_org(o, kind, d):
             if type(o).objects.filter(account=user).exclude(pk=o.pk).exists():
                 raise ValueError("That user is already linked to another organisation.")
             o.account = user
+
+
+def _sync_account_link(o, kind, old_account_id=None):
+    """Keep User.police_station / User.hospital in step with the organisation's login account.
+
+    The organisation's `account` is what grants access; the user's own link is shown in the profile and the
+    user form, so it must not point somewhere else.
+    """
+    field = "police_station" if kind == "police" else "hospital"
+    if old_account_id and old_account_id != o.account_id:
+        User.objects.filter(pk=old_account_id, **{field: o}).update(**{field: None})
+    if o.account_id:
+        User.objects.filter(pk=o.account_id).update(**{field: o})
 
 
 def _org_list(request, Model, kind):
@@ -374,26 +473,35 @@ def _org_list(request, Model, kind):
         except (ValueError, TypeError) as e:
             return err(str(e) or "Invalid value.")
         o.save()
-        return Response(org_json(o, kind), status=201)
-    qs = Model.objects.all() if request.user.role == "admin" else Model.objects.filter(is_active=True)
-    return Response([org_json(o, kind) for o in qs.order_by("name")])
+        _sync_account_link(o, kind)
+        return Response(org_json(o, kind, admin=True), status=201)
+    is_admin = request.user.role == "admin"
+    qs = _hospitals() if kind == "hospital" else Model.objects.all()
+    qs = qs.select_related("account") if is_admin else qs.filter(is_active=True)
+    return Response([org_json(o, kind, admin=is_admin) for o in qs.order_by("name")])
 
 
 def _org_item(request, pk, Model, kind):
     o = get_object_or_404(Model, pk=pk)
+    is_admin = request.user.role == "admin"
     if request.method == "GET":
-        return Response(org_json(o, kind))
-    if request.user.role != "admin":
+        return Response(org_json(o, kind, admin=is_admin))
+    if not is_admin:
         return err("Admin access required.", 403)
     if request.method == "DELETE":
+        # Deleting would cascade away every alert it ever handled (the incident history and the statistics).
+        if Alert.objects.filter(**{"police_station" if kind == "police" else "hospital": o}).exists():
+            return err(f"{o.name} has incident history and cannot be deleted. Mark it inactive instead.")
         o.delete()
         return Response({"ok": True})
+    old_account_id = o.account_id
     try:
         _apply_org(o, kind, request.data)
     except (ValueError, TypeError) as e:
         return err(str(e) or "Invalid value.")
     o.save()
-    return Response(org_json(o, kind))
+    _sync_account_link(o, kind, old_account_id)
+    return Response(org_json(o, kind, admin=True))
 
 
 @api_view(["GET", "POST"])
@@ -479,6 +587,8 @@ def ambulance_item(request, pk):
     if not (request.user.role == "admin" or a.hospital.account_id == request.user.id):
         return err("Not allowed.", 403)
     if request.method == "DELETE":
+        if a.status == "dispatched":
+            return err("This ambulance is on a mission and cannot be deleted.")
         a.delete()
         return Response({"ok": True})
     d = request.data
@@ -496,9 +606,10 @@ def _apply_camera(c, d):
     for f in ("camera_id", "name", "road_name", "stream_url"):
         if f in d:
             setattr(c, f, str(d[f] or "").strip())
-    for f in ("latitude", "longitude"):
-        if f in d:
-            setattr(c, f, float(d[f]))
+    if "latitude" in d:
+        c.latitude = _coord(d["latitude"], "Latitude", 90)
+    if "longitude" in d:
+        c.longitude = _coord(d["longitude"], "Longitude", 180)
     if "is_active" in d:
         c.is_active = bool(d["is_active"])
 
@@ -515,8 +626,8 @@ def cameras(request):
         c = Camera(latitude=0, longitude=0)
         try:
             _apply_camera(c, d)
-        except (ValueError, TypeError):
-            return err("Latitude and longitude must be numbers.")
+        except (ValueError, TypeError) as e:
+            return err(str(e) or "Latitude and longitude must be numbers.")
         c.save()
         return Response(camera_json(c), status=201)
     return Response([camera_json(c) for c in Camera.objects.all().order_by("camera_id")])
@@ -531,64 +642,13 @@ def camera_item(request, pk):
         return Response({"ok": True})
     try:
         _apply_camera(c, request.data)
-    except (ValueError, TypeError):
-        return err("Latitude and longitude must be numbers.")
+    except (ValueError, TypeError) as e:
+        return err(str(e) or "Latitude and longitude must be numbers.")
     c.save()
     return Response(camera_json(c))
 
 
-# ---------------------------------------------------------------- users
-@api_view(["GET", "POST"])
-@admin_only
-def users(request):
-    if request.method == "POST":
-        d = request.data
-        username, pw, role = (d.get("username") or "").strip(), d.get("password") or "", d.get("role")
-        if role not in dict(User.ROLES):
-            return err("Choose a valid role.")
-        if not username or len(pw) < 8:
-            return err("A username and a password of at least 8 characters are required.")
-        if User.objects.filter(username__iexact=username).exists():
-            return err("That username is already taken.")
-        u = User.objects.create_user(username=username, email=d.get("email", ""), password=pw, role=role,
-                                     first_name=d.get("first_name", ""), phone=d.get("phone", ""))
-        return Response(user_json(u), status=201)
-    qs = User.objects.all().order_by("-date_joined")
-    q = request.query_params.get("q", "").strip()
-    if q:
-        qs = qs.filter(Q(username__icontains=q) | Q(email__icontains=q) | Q(first_name__icontains=q))
-    role = request.query_params.get("role")
-    if role in dict(User.ROLES):
-        qs = qs.filter(role=role)
-    return Response([user_json(u) for u in qs[:300]])
-
-
-@api_view(["PATCH", "DELETE"])
-@admin_only
-def user_item(request, pk):
-    u = get_object_or_404(User, pk=pk)
-    me = request.user
-    if request.method == "DELETE":
-        if u.id == me.id:
-            return err("You cannot delete your own account.")
-        u.delete()
-        return Response({"ok": True})
-    d = request.data
-    if u.id == me.id and (d.get("is_active") is False or d.get("role", "admin") != "admin"):
-        return err("You cannot deactivate or demote your own account.")
-    for f in ("first_name", "last_name", "email", "phone"):
-        if f in d:
-            setattr(u, f, d[f])
-    if d.get("role") in dict(User.ROLES):
-        u.role = d["role"]
-    if "is_active" in d:
-        u.is_active = bool(d["is_active"])
-    if d.get("password"):
-        if len(d["password"]) < 8:
-            return err("Password must be at least 8 characters.")
-        u.set_password(d["password"])
-    u.save()
-    return Response(user_json(u))
+# Account management lives in accounts.views.UserAdminViewSet (routed at /api/users/).
 
 
 # ---------------------------------------------------------------- notifications
@@ -599,6 +659,13 @@ def _notif_json(n):
 
 @api_view(["GET"])
 def notifications(request):
+    # Every signed-in screen polls this endpoint, so use it as the heartbeat that re-routes alerts nobody
+    # answered in time (also available as `manage.py escalate_stale_alerts` for a scheduler).
+    if cache.add("stale-alert-sweep", 1, 20):
+        try:
+            services.escalate_stale_alerts()
+        except Exception:  # never let the sweep break a notification poll
+            log.exception("Escalation of unanswered alerts failed")
     qs = Notification.objects.filter(user=request.user)
     return Response({"items": [_notif_json(n) for n in qs[:100]], "unread": qs.filter(is_read=False).count()})
 
@@ -617,13 +684,10 @@ def notifications_read(request, pk=None):
 @admin_only
 def analytics(request):
     qs = Accident.objects.all()
-    now = timezone.localtime()
-    daily = [{"date": (now - timedelta(days=i)).strftime("%d %b"),
-              "count": qs.filter(detected_at__date=(now - timedelta(days=i)).date()).count()}
-             for i in range(13, -1, -1)]
+    daily = daily_counts(qs, 14)
     hours = [0] * 24
-    for dt in qs.values_list("detected_at", flat=True):
-        hours[timezone.localtime(dt).hour] += 1
+    for r in qs.annotate(h=ExtractHour("detected_at")).values("h").annotate(n=Count("id")).order_by():
+        hours[r["h"]] = r["n"]
     alerts = Alert.objects.all()
     total_alerts = alerts.count()
     responded = alerts.exclude(status__in=["pending", "rejected"]).count()
@@ -638,7 +702,10 @@ def analytics(request):
                    "acceptance_rate": round(responded * 100 / total_alerts) if total_alerts else 0},
         "ai": {"detections": qs.count(),
                "avg_confidence": round((qs.aggregate(a=Avg("confidence"))["a"] or 0) * 100, 1),
-               "auto_verified": qs.exclude(status__in=["verification_pending", "detected"]).count(),
+               # Counted from the timeline so a manual confirmation is not mistaken for an automatic one.
+               "auto_verified": TimelineEvent.objects.filter(message="Accident verified automatically").count(),
+               "manually_confirmed": TimelineEvent.objects.filter(message="Accident confirmed manually").count(),
+               "false_alarms": false_alarm_count(),
                "pending_verification": qs.filter(status="verification_pending").count(),
                "simulated": qs.filter(is_simulated=True).count(),
                "cameras": Camera.objects.filter(is_active=True).count()},
