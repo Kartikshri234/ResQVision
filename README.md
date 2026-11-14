@@ -47,6 +47,8 @@ ResQVision/
 │   ├── client.py             # Sends events to POST /api/ingest/
 │   ├── send_test_event.py    # Fake event for testing without video or YOLO
 │   └── requirements.txt      # Separate dependencies (ultralytics, opencv)
+├── browser_tests/            # Playwright user journeys (run_journeys.py), temp database
+└── docs/                     # Validation report and other project notes
 ```
 
 All frontend files (HTML template, CSS, JavaScript) live in one place, the
