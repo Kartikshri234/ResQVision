@@ -105,6 +105,12 @@ Optional environment variables:
 | `DB_PASSWORD` | PostgreSQL password |
 | `DB_HOST` | PostgreSQL host, default `localhost` |
 | `DB_PORT` | PostgreSQL port, default `5432` |
+| `SQLITE_PATH` | SQLite file location. Keep it outside OneDrive/Dropbox, because cloud sync can corrupt a live database |
+| `MEDIA_ROOT` | Where uploaded evidence is stored (defaults to `media/`) |
+| `ALERT_RESPONSE_TIMEOUT_SECONDS` | Seconds before an unanswered alert is re-routed to the next nearest service; default `180`, `0` turns it off |
+| `NUM_PROXIES` | Reverse proxies in front of Django, default `0`. Set `1` behind nginx or a load balancer, or all users share one IP in the login throttle |
+| `THROTTLE_LOGIN`, `THROTTLE_OTP` | Rate limits for sign-in and password-reset codes (defaults `20/min` and `10/min`) |
+| `CSP_ENABLED` | Content-Security-Policy header, default on |
 
 When using PostgreSQL, install the optional `psycopg2-binary` dependency
 listed in `requirements.txt` and provide the database variables.
@@ -172,8 +178,11 @@ Useful URLs:
    enabled, the accident is confirmed and nearby services are notified.
 4. Otherwise, the accident enters `verification_pending` and an administrator
    must confirm it.
-5. Police and hospital users accept or reject their alerts. Rejections can
-   trigger escalation to the next available organisation.
+5. Police and hospital users accept or reject their alerts. A rejection, or no
+   answer within `ALERT_RESPONSE_TIMEOUT_SECONDS`, escalates the request to the
+   next available organisation. The sweep runs whenever a signed-in screen polls
+   notifications, and can also be run from a scheduler with
+   `python manage.py escalate_stale_alerts`.
 6. Responders move alerts through accepted, dispatched, arrived, and resolved.
 7. The accident is synchronized from its alerts and can be closed by an
    administrator.
@@ -342,10 +351,15 @@ Before deployment:
   `ALLOWED_HOSTS`, and a strong `AI_SERVICE_API_KEY`.
 - Configure PostgreSQL and a real email backend instead of the console email
   backend used for development.
-- Do not expose demo credentials or development OTP responses.
+- Do not expose demo credentials or development OTP responses. `seed_demo` refuses to run unless `DJANGO_DEBUG=1`.
+- Use a shared cache (Redis or Memcached) when running several workers, so the login and
+  password-reset throttles and lock-outs are shared, and set `NUM_PROXIES` behind a proxy.
+- Do not serve `/media/` publicly: evidence is delivered through `/api/accidents/<id>/evidence/...`,
+  which checks that the signed-in user may see that accident.
 - Configure HTTPS, secure cookies, CSRF settings, media storage, backups, and
   appropriate file-upload limits.
-- Run `python manage.py collectstatic` and serve `/static/` and `/media/` from a web server.
+- Run `python manage.py collectstatic` and serve `/static/` from a web server. Keep `/media/` off the
+  public web server (the app serves evidence itself, after a permission check).
 - Run `python manage.py check --deploy` and apply migrations during release.
 
 ## License
