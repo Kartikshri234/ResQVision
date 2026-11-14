@@ -85,16 +85,17 @@ pip install -r requirements.txt
 
 ### 3. Configure local settings
 
-The application uses SQLite automatically when `DB_NAME` is not set. For a
-local development server, the defaults are sufficient. Set a strong
-`DJANGO_SECRET_KEY` and `AI_SERVICE_API_KEY` before exposing the application.
+The application uses SQLite automatically when `DB_NAME` is not set. For local
+development copy `.env.example` to `.env` (it sets `DJANGO_DEBUG=1`). With debug
+off, the app refuses to start unless `DJANGO_SECRET_KEY` (32+ characters),
+`AI_SERVICE_API_KEY` (16+ characters) and explicit `ALLOWED_HOSTS` are set.
 
 Optional environment variables:
 
 | Variable | Purpose |
 | --- | --- |
 | `DJANGO_SECRET_KEY` | Django signing and session key |
-| `DJANGO_DEBUG` | Debug mode; defaults to `1` |
+| `DJANGO_DEBUG` | Debug mode; defaults to off (`0`). Only debug mode allows the dev key fallbacks and returns OTPs in API responses |
 | `ALLOWED_HOSTS` | Comma-separated hosts when debug is disabled |
 | `AI_SERVICE_API_KEY` | Shared secret for `/api/ingest/` |
 | `DB_NAME` | PostgreSQL database name; enables PostgreSQL mode |
@@ -108,11 +109,9 @@ listed in `requirements.txt` and provide the database variables.
 
 ### 4. Initialize the database
 
-The repository does not include migration files yet, so create them first
-(this is needed once), then apply them:
+Migration files are included. Apply them:
 
 ```bash
-python manage.py makemigrations accounts emergency
 python manage.py migrate
 ```
 
@@ -193,10 +192,10 @@ authentication and require an authenticated user.
 | POST | `/api/auth/login/` | Log in by username or email |
 | POST | `/api/auth/logout/` | End the current session |
 | GET/PATCH | `/api/auth/me/` | Read or update the current profile |
-| POST | `/api/auth/password/` | Change the current password |
-| POST | `/api/auth/forgot/` | Send a password-reset OTP |
+| POST | `/api/auth/change-password/` | Change the current password |
+| POST | `/api/auth/forgot-password/` | Send a password-reset OTP |
 | POST | `/api/auth/verify-otp/` | Verify an OTP |
-| POST | `/api/auth/reset/` | Reset a password using an OTP |
+| POST | `/api/auth/reset-password/` | Reset a password using an OTP |
 
 ### Accidents and response
 
@@ -209,7 +208,7 @@ authentication and require an authenticated user.
 | POST | `/api/accidents/<id>/confirm/` | Admin confirmation |
 | POST | `/api/accidents/<id>/close/` | Admin closure |
 | POST | `/api/alerts/<id>/respond/` | Accept, reject, dispatch, arrive, or resolve |
-| GET/POST | `/api/ingest/` | Receive an AI-detected accident |
+| POST | `/api/ingest/` | Receive an AI-detected accident (`X-API-Key` header) |
 | POST | `/api/simulate/` | Admin-only simulated accident |
 
 The accident list supports `view=all|new|active|history`, plus `q` and
@@ -313,6 +312,25 @@ The emergency app stores:
 
 The accounts app provides a custom `User` model with `admin`, `police`,
 `hospital`, and `ambulance` roles, plus time-limited password-reset OTPs.
+
+## Testing
+
+```bash
+python manage.py test                 # API, workflow, permission and shell tests
+python manage.py check --deploy       # with production environment variables set
+```
+
+Browser journeys (login, accept/reject an alert, admin confirmation, sign out,
+map with the CDN blocked) run in Chromium against a temporary database, never
+the demo one:
+
+```bash
+pip install playwright
+python -m playwright install chromium
+python browser_tests/run_journeys.py [--headed]
+```
+
+CI (`.github/workflows/test.yml`) runs the Django tests on SQLite and PostgreSQL.
 
 ## Production considerations
 

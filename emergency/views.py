@@ -7,6 +7,7 @@ import math
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -259,7 +260,17 @@ def accident_close(request, pk):
 
 @api_view(["POST"])
 def alert_respond(request, pk):
-    al = get_object_or_404(Alert.objects.select_related("accident", "police_station", "hospital", "ambulance"), pk=pk)
+    # One transaction per response: the alert row is locked so two responders (or a double click)
+    # cannot both move the same alert, or assign the same ambulance, at the same time.
+    with transaction.atomic():
+        return _alert_respond(request, pk)
+
+
+def _alert_respond(request, pk):
+    # of=("self",) locks only the alert row; PostgreSQL refuses FOR UPDATE on the nullable joined tables.
+    al = get_object_or_404(
+        Alert.objects.select_related("accident", "police_station", "hospital", "ambulance")
+        .select_for_update(of=("self",)), pk=pk)
     u, org, acc = request.user, al.org, al.accident
     if not (u.role == "admin" or (org and org.account_id == u.id)):
         return err("This alert is not assigned to you.", 403)
@@ -288,7 +299,7 @@ def alert_respond(request, pk):
             avail = Ambulance.objects.filter(hospital=al.hospital, status="available")
             amb = None
             if d.get("ambulance_id"):
-                amb = avail.filter(pk=d["ambulance_id"]).first()
+                amb = avail.select_for_update().filter(pk=d["ambulance_id"]).first()
                 if not amb:
                     return err("That ambulance is not available.")
             elif avail.exists():

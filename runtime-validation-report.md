@@ -27,6 +27,21 @@
 - Web shell: HTML response, CSRF cookie, missing-route behavior.
 - Offline map behavior: visible degraded state when Leaflet or map tiles are unavailable.
 
+## Follow-up status (2026-11-14, after code review)
+
+Nothing below was executed by the reviewer; run the commands in the last column to confirm.
+
+| Item | Status | What changed | Confirm with |
+|---|---|---|---|
+| 3. Narrow coverage | Mostly closed | `emergency/tests_workflow.py` already covers dispatch, escalation, admin CRUD, role scoping, notifications, analytics, settings. Still untested: file-upload edge cases beyond ingest checks, management commands | `python manage.py test` |
+| 6. Dev secrets / OTP | Closed | `settings.py` only falls back to dev keys when `DJANGO_DEBUG=1`; otherwise it refuses to start. `dev_otp` is returned only in debug | `python manage.py check --deploy` with prod env |
+| 1. Browser journeys | Written, not yet run | `browser_tests/run_journeys.py`: bad login, police accept + timeline + sign out, reject needs reason, admin confirm, hospital dashboard, map with CDN blocked. Uses a temp DB | `python browser_tests/run_journeys.py` |
+| 2. PostgreSQL | Open | `alert_respond` now runs in one transaction with a row lock (`select_for_update(of=("self",))`) and locks the ambulance it assigns. No-op on SQLite, so only a Postgres run proves it | CI `postgres` job |
+| 4. AI detector runtime | Open | Unchanged | `ai_service/run_detector.py --dry-run` on a sample video |
+| 5. CDN map | Open | Unchanged (degraded state exists) | Vendoring Leaflet is the remaining fix |
+
+Also fixed: README listed wrong auth paths, claimed migrations were missing, and said debug defaults on.
+
 ## Where the Project Lags Behind
 
 ### High priority
