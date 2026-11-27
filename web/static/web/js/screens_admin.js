@@ -21,13 +21,14 @@
       SC.state.adminHome = { s, m };
       const days = s.daily.map((t) => t.date.split(' ')[0]);
       return `<div class="hero"><div class="small muted">Welcome back</div><h2>${esc(SC.state.user.first_name || SC.state.user.username)}</h2>
-          <div class="row mt12"><button class="btn sm" style="background:#fff;color:var(--navy)" data-act="simulate">${icon('zap', 'sm')} Simulate accident</button><button class="btn sm" style="background:rgba(255,255,255,.15)" data-go="/admin/live">${icon('activity', 'sm')} Live monitoring</button></div></div>
+          <div class="row wrap mt12"><button class="btn sm" style="background:#fff;color:var(--text)" data-act="simulate">${icon('zap', 'sm')} Simulate accident</button><button class="btn sm" style="background:rgba(255,255,255,.16)" data-go="/admin/live">${icon('activity', 'sm')} Live monitoring</button></div></div>
         ${s.verification_pending ? `<div class="alertbar mt12" data-go="/admin/live">${icon('alert')}<div class="grow"><b>${s.verification_pending} detection${s.verification_pending > 1 ? 's' : ''} awaiting verification</b><div class="small">Low-confidence AI events need your review.</div></div>${icon('chevron')}</div>` : ''}
-        <div class="grid2 mt12">${SC.ui.tile(s.total, 'Total accidents', 'alert', '', '/admin/accidents')}${SC.ui.tile(s.active, 'Active accidents', 'zap', 'red', '/admin/accidents?f=active')}
-        ${SC.ui.tile(s.pending_responses, 'Pending responses', 'clock', 'orange', '/admin/live')}${SC.ui.tile(s.resolved, 'Resolved', 'check', 'green', '/admin/accidents?f=history')}
-        ${SC.ui.tile(s.hospitals, 'Hospitals', 'hospital', '', '/admin/hospitals')}${SC.ui.tile(s.police, 'Police stations', 'shield', '', '/admin/police-stations')}</div>
-        ${SC.ui.section('Accident locations')}<div class="map sm" id="map"></div>
-        ${SC.ui.section('Last 7 days')}<div class="card">${bars(s.daily.map((t) => t.count), days)}</div>
+        <div class="grid3 mt12">${SC.ui.tile(s.total, 'Total accidents', 'alert', '', '/admin/accidents')}${SC.ui.tile(s.active, 'Active accidents', 'zap', 'red', '/admin/accidents?f=active')}${SC.ui.tile(s.pending_responses, 'Pending responses', 'clock', 'orange', '/admin/live')}
+        ${SC.ui.tile(s.resolved, 'Resolved', 'check', 'green', '/admin/accidents?f=history')}${SC.ui.tile(s.hospitals, 'Hospitals', 'hospital', '', '/admin/hospitals')}${SC.ui.tile(s.police, 'Police stations', 'shield', '', '/admin/police-stations')}</div>
+        <div class="cols2 mt12">
+          <div>${SC.ui.section('Accident locations')}<div class="map sm" id="map"></div></div>
+          <div>${SC.ui.section('Last 7 days')}<div class="card">${bars(s.daily.map((t) => t.count), days)}</div></div>
+        </div>
         ${SC.ui.section('Recent accident alerts', 'View all', '/admin/accidents')}<div class="list">${s.recent.length ? s.recent.map((a) => SC.ui.accCard(a)).join('') : SC.ui.empty('No accidents yet', 'Use "Simulate accident" to try the workflow.', 'alert')}</div>`;
     },
     mount: (el) => { const { m } = SC.state.adminHome; SC.makeMap(el.querySelector('#map'), { markers: m.accidents.map(SC.accidentMarker), center: [28.6139, 77.2090], zoom: 11, key: 'admin-home' }); },
@@ -65,8 +66,9 @@
       const a = o.accounts;
       const u = SC.state.user;
       const task = (ico, title, big, lines, btn, path) => `<div class="card task"><div class="row"><span class="tico2">${icon(ico)}</span><b>${title}</b></div><div class="big">${big}</div><div class="small muted">${lines}</div><button class="btn sm mt12" data-go="${path}">${btn}</button></div>`;
-      return `<div class="hero"><div class="small muted">Administrator</div><h2>${esc(u.first_name || u.username)}</h2>
-          <p class="small mt8" style="color:#E6F0FC">You issue and manage every account, verify low-confidence detections and keep services configured. Below you can also see what police and hospital users are doing.</p></div>
+      return `<div class="hero"><div class="row between wrap"><div><div class="small muted">Administrator</div><h2>${esc(u.first_name || u.username)}</h2>
+          <p class="small mt8" style="color:rgba(255,255,255,.85);max-width:640px">Manage user accounts, verify low-confidence detections, configure services, and monitor police and hospital response activity.</p></div>
+          <div class="row wrap"><button class="btn sm" style="background:#fff;color:var(--text)" data-act="simulate">${icon('zap', 'sm')} Simulate</button><button class="btn sm" style="background:rgba(255,255,255,.16)" data-go="/admin/accidents">${icon('alert', 'sm')} Accidents</button></div></div></div>
         ${s.verification_pending ? `<div class="alertbar mt12" data-go="/admin/live">${icon('alert')}<div class="grow"><b>${s.verification_pending} detection${s.verification_pending > 1 ? 's' : ''} awaiting your verification</b><div class="small">Review the evidence, then confirm or dismiss.</div></div>${icon('chevron')}</div>` : ''}
         ${SC.ui.section('Administrator tasks')}
         <div class="grid4">
@@ -93,7 +95,7 @@
       return `<div class="grid2">${SC.ui.tile(`${on}/${cams.length}`, 'Cameras active', 'camera', on ? 'green' : 'orange')}${SC.ui.tile(active.length, 'Live accidents', 'zap', active.length ? 'red' : '')}</div>
         ${pending.length ? `${SC.ui.section('Awaiting verification')}<div class="list">${pending.map((a) => `<div class="card">${SC.ui.accCard(a).replace('card clickable', 'card flat clickable')}<div class="btnrow mt12"><button class="btn sm green" data-act="acc-op" data-op="confirm" data-id="${a.id}">Confirm &amp; alert</button><button class="btn sm light" data-act="acc-op" data-op="dismiss" data-id="${a.id}">False alarm</button></div></div>`).join('')}</div>` : ''}
         ${SC.ui.section('Active incidents')}<div class="list">${active.length ? active.map((a) => SC.ui.accCard(a)).join('') : SC.ui.empty('All clear', 'No active accidents right now.', 'check')}</div>
-        ${SC.ui.section('CCTV cameras')}<div class="list">${cams.map((c) => `<div class="card row"><span style="color:${c.is_active ? 'var(--green)' : '#98A2B3'}">${icon('camera', 'lg')}</span><div class="grow"><b class="small">${esc(c.camera_id)} &middot; ${esc(c.name)}</b><div class="tiny muted">${esc(c.road_name || '')}</div></div><span class="badge ${c.is_active ? 'green' : 'gray'}">${c.is_active ? 'Active' : 'Inactive'}</span></div>`).join('')}</div>`;
+        ${SC.ui.section('CCTV cameras')}<div class="list">${cams.map((c) => `<div class="card row"><span style="color:${c.is_active ? 'var(--green)' : '#94A3B8'}">${icon('camera', 'lg')}</span><div class="grow"><b class="small">${esc(c.camera_id)} &middot; ${esc(c.name)}</b><div class="tiny muted">${esc(c.road_name || '')}</div></div><span class="badge ${c.is_active ? 'green' : 'gray'}">${c.is_active ? 'Active' : 'Inactive'}</span></div>`).join('')}</div>`;
     },
   });
 
@@ -113,8 +115,8 @@
       if (q.f) { SC.state.accFilter.f = q.f; }
       const f = SC.state.accFilter;
       const list = await SC.get(accQuery());
-      return `<div class="searchbox">${icon('search')}<input id="acc-q" placeholder="Search ID, location, type" value="${esc(f.q)}"></div>
-        <div class="chips mt8">${FILTERS.map(([v, l]) => `<span class="chip ${f.f === v ? 'active' : ''}" data-act="acc-filter" data-key="f" data-val="${v}">${l}</span>`).join('')}</div>
+      return `<div class="toolbar"><div class="searchbox">${icon('search')}<input id="acc-q" placeholder="Search ID, location, type" value="${esc(f.q)}"></div><button class="btn sm" data-act="simulate">${icon('zap', 'sm')} Simulate</button></div>
+        <div class="chips">${FILTERS.map(([v, l]) => `<span class="chip ${f.f === v ? 'active' : ''}" data-act="acc-filter" data-key="f" data-val="${v}">${l}</span>`).join('')}</div>
         <div class="chips">${[['', 'Any severity'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']].map(([v, l]) => `<span class="chip ${f.severity === v ? 'active' : ''}" data-act="acc-filter" data-key="severity" data-val="${v}">${l}</span>`).join('')}</div>
         <div class="muted small mb8">${list.length} accident${list.length === 1 ? '' : 's'}</div>
         <div class="list">${list.length ? list.map((a) => SC.ui.accCard(a)).join('') : SC.ui.empty('No accidents found', 'Try another filter.', 'search')}</div>`;
@@ -126,16 +128,31 @@
   });
   SC.actions['acc-filter'] = (el) => { SC.state.accFilter[el.dataset.key] = el.dataset.val; if (location.hash.includes('?')) location.hash = '#/admin/accidents'; else SC.render(); };
 
-  /* 13-15. Services: generic CRUD screens */
+  /* 13-15. Services: generic CRUD screens with search + add toolbar */
+  SC.state.crudQ = {};
   const crud = (cfg) => SC.route(cfg.path, {
     title: cfg.title, tab: '/admin/services', roles: ADMIN,
     render: async () => {
       const deps = cfg.deps ? await cfg.deps() : {};
       const items = await SC.get(cfg.endpoint);
       SC.state.crud = { cfg, items, deps };
+      const q = (SC.state.crudQ[cfg.path] || '').trim().toLowerCase();
+      const shown = q ? items.filter((i) => JSON.stringify(i).toLowerCase().includes(q)) : items;
       return `${SC.ui.tabs(SERVICE_TABS, cfg.path)}
-        <div class="list">${items.length ? items.map((i) => cfg.card(i, deps)).join('') : SC.ui.empty('Nothing here yet', 'Tap + to add one.', cfg.icon)}</div>
+        <div class="toolbar">
+          <div class="searchbox">${icon('search')}<input id="crud-q" placeholder="Filter ${esc(cfg.title.toLowerCase())}..." value="${esc(SC.state.crudQ[cfg.path] || '')}"></div>
+          <button class="btn sm" data-act="crud-add">${icon('plus', 'sm')} Add ${esc(cfg.noun)}</button>
+        </div>
+        <div class="list">${shown.length ? shown.map((i) => cfg.card(i, deps)).join('') : SC.ui.empty(q ? 'No matches' : 'Nothing here yet', q ? 'Try a different search term.' : 'Click "Add ' + cfg.noun + '" to create one.', cfg.icon)}</div>
         <button class="fab" data-act="crud-add" aria-label="Add">${icon('plus', 'lg')}</button>`;
+    },
+    mount: (el) => {
+      const inp = el.querySelector('#crud-q');
+      if (!inp) return;
+      inp.oninput = () => {
+        SC.state.crudQ[cfg.path] = inp.value;
+        SC.render().then(() => { const f = document.getElementById('crud-q'); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } });
+      };
     },
   });
   const openForm = (item) => {
@@ -215,14 +232,20 @@
       const a = total ? (sev.high / total) * 100 : 0, b = total ? a + (sev.medium / total) * 100 : 0;
       const donut = total ? `conic-gradient(var(--red) 0 ${a}%, var(--orange) ${a}% ${b}%, var(--green) ${b}% 100%)` : 'var(--lblue)';
       const statusItems = Object.keys(d.status).map((k) => ({ label: SC.STATUS[k] || k, count: d.status[k] }));
-      return `<div class="grid2">${SC.ui.tile(d.ai.detections, 'AI detections', 'alert')}${SC.ui.tile(d.ai.avg_confidence + '%', 'Avg AI confidence', 'activity', 'green')}${SC.ui.tile(d.alerts.acceptance_rate + '%', 'Alert response rate', 'check')}${SC.ui.tile(d.ai.pending_verification, 'Pending verification', 'clock', 'orange')}</div>
-        ${SC.ui.section('Accidents - last 14 days')}<div class="card">${bars(d.daily.map((t) => t.count), d.daily.map((t) => t.date.split(' ')[0]))}</div>
-        ${SC.ui.section('Severity (AI estimate)')}<div class="card row"><div class="donut" style="background:${donut}"><div>${total}</div></div><div class="legend small"><p><i style="background:var(--red)"></i>High: ${sev.high}</p><p class="mt8"><i style="background:var(--orange)"></i>Medium: ${sev.medium}</p><p class="mt8"><i style="background:var(--green)"></i>Low: ${sev.low}</p></div></div>
-        ${SC.ui.section('By accident type')}<div class="card">${hbars(d.types.map((t) => ({ label: t.accident_type, count: t.n })))}</div>
-        ${SC.ui.section('By status')}<div class="card">${hbars(statusItems)}</div>
+      return `<div class="grid4">${SC.ui.tile(d.ai.detections, 'AI detections', 'alert')}${SC.ui.tile(d.ai.avg_confidence + '%', 'Avg AI confidence', 'activity', 'green')}${SC.ui.tile(d.alerts.acceptance_rate + '%', 'Alert response rate', 'check')}${SC.ui.tile(d.ai.pending_verification, 'Pending verification', 'clock', 'orange')}</div>
+        <div class="cols2 mt8">
+          <div>${SC.ui.section('Accidents - last 14 days')}<div class="card">${bars(d.daily.map((t) => t.count), d.daily.map((t) => t.date.split(' ')[0]))}</div></div>
+          <div>${SC.ui.section('Severity (AI estimate)')}<div class="card row"><div class="donut" style="background:${donut}"><div>${total}</div></div><div class="legend small"><p><i style="background:var(--red)"></i>High: ${sev.high}</p><p class="mt8"><i style="background:var(--orange)"></i>Medium: ${sev.medium}</p><p class="mt8"><i style="background:var(--green)"></i>Low: ${sev.low}</p></div></div></div>
+        </div>
+        <div class="cols2">
+          <div>${SC.ui.section('By accident type')}<div class="card">${hbars(d.types.map((t) => ({ label: t.accident_type, count: t.n })))}</div></div>
+          <div>${SC.ui.section('By status')}<div class="card">${hbars(statusItems)}</div></div>
+        </div>
         ${SC.ui.section('By hour of day')}<div class="card">${bars(d.hours, d.hours.map((_, h) => (h % 6 === 0 ? h : '')))}</div>
-        ${SC.ui.section('Emergency responses')}<div class="card"><dl class="kv"><dt>Alerts sent</dt><dd>${d.alerts.total}</dd><dt>Responded</dt><dd>${d.alerts.responded}</dd><dt>Rejected</dt><dd>${d.alerts.rejected}</dd></dl></div>
-        ${SC.ui.section('AI detection statistics')}<div class="card"><dl class="kv"><dt>Auto-verified</dt><dd>${d.ai.auto_verified}</dd><dt>Confirmed by an admin</dt><dd>${d.ai.manually_confirmed}</dd><dt>Dismissed as false alarm</dt><dd>${d.ai.false_alarms}</dd><dt>Simulated</dt><dd>${d.ai.simulated}</dd><dt>Active cameras</dt><dd>${d.ai.cameras}</dd></dl></div>`;
+        <div class="cols2">
+          <div>${SC.ui.section('Emergency responses')}<div class="card"><dl class="kv"><dt>Alerts sent</dt><dd>${d.alerts.total}</dd><dt>Responded</dt><dd>${d.alerts.responded}</dd><dt>Rejected</dt><dd>${d.alerts.rejected}</dd></dl></div></div>
+          <div>${SC.ui.section('AI detection statistics')}<div class="card"><dl class="kv"><dt>Auto-verified</dt><dd>${d.ai.auto_verified}</dd><dt>Confirmed by an admin</dt><dd>${d.ai.manually_confirmed}</dd><dt>Dismissed as false alarm</dt><dd>${d.ai.false_alarms}</dd><dt>Simulated</dt><dd>${d.ai.simulated}</dd><dt>Active cameras</dt><dd>${d.ai.cameras}</dd></dl></div></div>
+        </div>`;
     },
   });
 
@@ -231,15 +254,20 @@
     title: 'System Settings', back: '/profile', tab: '/profile', roles: ADMIN,
     render: async () => {
       const s = await SC.get('/settings/');
-      return `<form data-form="sys-settings" class="card"><h3 class="mb8">Alert rules</h3>
-        ${SC.ui.field({ label: 'AI confidence needed to alert automatically (%)', name: 'min_confidence', type: 'number', step: '1', min: 0, max: 100, value: s.min_confidence, required: true })}
-        ${SC.ui.field({ label: 'Auto-alert when confidence is high enough', name: 'auto_alert', type: 'checkbox', value: s.auto_alert })}
-        ${SC.ui.field({ label: 'Alert radius (km)', name: 'notify_radius_km', type: 'number', step: '0.5', min: 1, value: s.notify_radius_km, required: true })}
-        ${SC.ui.field({ label: 'Police stations to notify', name: 'max_police', type: 'number', min: 1, max: 10, value: s.max_police, required: true })}
-        ${SC.ui.field({ label: 'Hospitals to notify', name: 'max_hospitals', type: 'number', min: 1, max: 10, value: s.max_hospitals, required: true })}
-        <button class="btn" type="submit">Save settings</button></form>
-        <div class="card mt16"><h3>AI service connection</h3><p class="small muted mt8">Point the Python AI service at this endpoint and send the shared key in the <code>X-API-Key</code> header (set <code>AI_SERVICE_API_KEY</code> on the server).</p><dl class="kv mt12"><dt>Events</dt><dd>${esc(location.origin)}/api/ingest/</dd></dl></div>
-        <button class="btn light mt16" data-act="simulate">${icon('zap')} Simulate accident</button>`;
+      const ingestUrl = `${location.origin}/api/ingest/`;
+      return `<div class="cols2">
+        <form data-form="sys-settings" class="card"><h3 class="mb8">Alert rules</h3>
+          ${SC.ui.field({ label: 'AI confidence needed to alert automatically (%)', name: 'min_confidence', type: 'number', step: '1', min: 0, max: 100, value: s.min_confidence, required: true })}
+          ${SC.ui.field({ label: 'Auto-alert when confidence is high enough', name: 'auto_alert', type: 'checkbox', value: s.auto_alert })}
+          ${SC.ui.field({ label: 'Alert radius (km)', name: 'notify_radius_km', type: 'number', step: '0.5', min: 1, value: s.notify_radius_km, required: true })}
+          ${SC.ui.field({ label: 'Police stations to notify', name: 'max_police', type: 'number', min: 1, max: 10, value: s.max_police, required: true })}
+          ${SC.ui.field({ label: 'Hospitals to notify', name: 'max_hospitals', type: 'number', min: 1, max: 10, value: s.max_hospitals, required: true })}
+          <button class="btn" type="submit">Save settings</button></form>
+        <div class="col">
+          <div class="card"><h3>AI service connection</h3><p class="small muted mt8">Point the Python AI service at this endpoint and send the shared key in the <code>X-API-Key</code> header (set <code>AI_SERVICE_API_KEY</code> on the server).</p><dl class="kv mt12"><dt>Endpoint</dt><dd class="row wrap" style="gap:8px"><code>${esc(ingestUrl)}</code><button type="button" class="btn sm light" data-act="copy-text" data-text="${esc(ingestUrl)}" data-msg="Endpoint URL copied">${icon('copy', 'sm')} Copy</button></dd></dl></div>
+          <div class="card"><h3>Test pipeline</h3><p class="small muted mt8">Trigger a simulated accident event on a registered camera to test alerts and responses.</p><button class="btn light mt12" data-act="simulate">${icon('zap', 'sm')} Simulate accident</button></div>
+        </div>
+      </div>`;
     },
   });
   SC.forms['sys-settings'] = (form) => SC.run(form.querySelector('button[type=submit]'), async () => { await SC.patch('/settings/', SC.formData(form)); SC.toast('Settings saved', 'success'); });

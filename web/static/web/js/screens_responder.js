@@ -1,12 +1,12 @@
 /* Police and hospital screens: dashboards, alert lists, dispatch / response management, ambulances, capacity. */
 (function () {
   const { esc, icon } = SC;
-  const POLICE = ['police'], HOSP = ['hospital'];   // ambulance users have their own screen (/ambulance)
+  const POLICE = ['police'], HOSP = ['hospital'];
   const POLICE_TABS = [['New Alerts', '/police/alerts'], ['Active', '/police/active'], ['History', '/police/history']];
   const HOSP_TABS = [['Alerts', '/hospital/alerts'], ['Response', '/hospital/response'], ['History', '/hospital/history']];
   const mineStatus = (a) => (a.my_alert ? a.my_alert.status : '');
 
-  const quick = (items) => `<div class="grid2 mt12">${items.map(([label, ico, go]) => `<div class="card clickable row" data-go="${go}"><span class="tico" style="color:var(--navy)">${icon(ico, 'lg')}</span><b class="small">${esc(label)}</b></div>`).join('')}</div>`;
+  const quick = (items) => `<div class="grid4 mt12">${items.map(([label, ico, go]) => `<div class="card clickable row" data-go="${go}"><span class="tico" style="color:var(--role-c)">${icon(ico, 'lg')}</span><b class="small">${esc(label)}</b></div>`).join('')}</div>`;
   const newBanner = (n, go) => (n ? `<div class="alertbar mt12" data-go="${go}">${icon('alert', 'lg')}<div class="grow"><b>${n} new emergency alert${n > 1 ? 's' : ''}</b><div class="small">Tap to review and respond</div></div>${icon('chevron')}</div>` : '');
   const withQuick = (a) => `<div>${SC.ui.accCard(a)}${mineStatus(a) === 'pending' ? `<div class="btnrow mt8"><button class="btn sm green" data-act="accept-alert" data-id="${a.my_alert.id}">Accept</button><button class="btn sm light" data-act="reject-alert" data-id="${a.my_alert.id}">Reject</button></div>` : ''}</div>`;
   const notLinked = (what) => SC.ui.empty(`No ${what} linked`, `Ask an administrator to link your account to a ${what}.`, what === 'hospital' ? 'hospital' : 'shield');
@@ -21,21 +21,46 @@
       const progress = s.recent.filter((a) => ['accepted', 'dispatched', 'arrived'].includes(mineStatus(a)));
       return `<div class="hero"><div class="small muted">${esc(SC.state.user.full_name)}</div><h2>${esc(s.org)}</h2><p class="small muted mt8">On duty &middot; ${s.active} active incident${s.active === 1 ? '' : 's'}</p></div>
         ${newBanner(s.new, '/police/alerts')}
-        <div class="grid2 mt12">${SC.ui.tile(s.new, 'New alerts', 'bell', s.new ? 'red' : '', '/police/alerts')}${SC.ui.tile(s.active, 'Active incidents', 'zap', 'orange', '/police/active')}${SC.ui.tile(s.resolved, 'Resolved', 'check', 'green', '/police/history')}${SC.ui.tile(s.rejected, 'Rejected', 'x', '', '/police/history')}</div>
+        <div class="grid4 mt12">${SC.ui.tile(s.new, 'New alerts', 'bell', s.new ? 'red' : '', '/police/alerts')}${SC.ui.tile(s.active, 'Active incidents', 'zap', 'orange', '/police/active')}${SC.ui.tile(s.resolved, 'Resolved', 'check', 'green', '/police/history')}${SC.ui.tile(s.rejected, 'Rejected', 'x', '', '/police/history')}</div>
         ${quick([['New alerts', 'bell', '/police/alerts'], ['Active incidents', 'zap', '/police/active'], ['Live map', 'map', '/map'], ['Incident history', 'clock', '/police/history']])}
         ${SC.ui.section('Needs your response', 'See all', '/police/alerts')}<div class="list">${pending.length ? pending.map(withQuick).join('') : SC.ui.empty('No pending alerts', 'You are all caught up.', 'check')}</div>
         ${progress.length ? `${SC.ui.section('In progress', 'See all', '/police/active')}<div class="list">${progress.map((a) => SC.ui.accCard(a)).join('')}</div>` : ''}`;
     },
   });
 
-  /* Alert list screens (19, 20, 23 police | 25, 26, 29 hospital) */
+  /* Alert list screens (19, 20, 23 police | 25, 26, 29 hospital) with quick client-side search & severity filter */
+  SC.state.listFilter = {};
   const listScreen = (cfg) => SC.route(cfg.path, {
     title: cfg.title, tab: cfg.tab, roles: cfg.roles, live: cfg.group === 'history' ? 0 : 6000,
     render: async () => {
+      const f = SC.state.listFilter[cfg.path] || { q: '', severity: '' };
       const list = await SC.get('/accidents/?view=' + cfg.group);
-      return `${SC.ui.tabs(cfg.tabs, cfg.path)}<div class="list">${list.length ? list.map(cfg.group === 'new' ? withQuick : (a) => SC.ui.accCard(a)).join('') : SC.ui.empty(cfg.empty[0], cfg.empty[1], cfg.icon)}</div>`;
+      const q = f.q.trim().toLowerCase();
+      const shown = list.filter((a) => (!f.severity || a.severity === f.severity)
+        && (!q || `${a.accident_id} ${a.location} ${a.accident_type}`.toLowerCase().includes(q)));
+      const card = cfg.group === 'new' ? withQuick : (a) => SC.ui.accCard(a);
+      return `${SC.ui.tabs(cfg.tabs, cfg.path)}
+        <div class="toolbar">
+          <div class="searchbox">${icon('search')}<input id="list-q" placeholder="Search ID, location, type..." value="${esc(f.q)}"></div>
+          <div class="chips" style="padding:0">${[['', 'All'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']].map(([v, l]) => `<span class="chip ${f.severity === v ? 'active' : ''}" data-act="list-sev" data-path="${cfg.path}" data-val="${v}">${l}</span>`).join('')}</div>
+        </div>
+        <div class="list">${shown.length ? shown.map(card).join('') : SC.ui.empty(q || f.severity ? 'No matching alerts' : cfg.empty[0], q || f.severity ? 'Clear filters to see all items.' : cfg.empty[1], cfg.icon)}</div>`;
+    },
+    mount: (el) => {
+      const inp = el.querySelector('#list-q');
+      if (!inp) return;
+      inp.oninput = () => {
+        const prev = SC.state.listFilter[cfg.path] || { q: '', severity: '' };
+        SC.state.listFilter[cfg.path] = { ...prev, q: inp.value };
+        SC.render().then(() => { const f = document.getElementById('list-q'); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } });
+      };
     },
   });
+  SC.actions['list-sev'] = (el) => {
+    const prev = SC.state.listFilter[el.dataset.path] || { q: '', severity: '' };
+    SC.state.listFilter[el.dataset.path] = { ...prev, severity: el.dataset.val };
+    SC.render();
+  };
   listScreen({ path: '/police/alerts', title: 'New Alerts', group: 'new', tab: '/police/alerts', roles: POLICE, tabs: POLICE_TABS, icon: 'bell', empty: ['No new alerts', 'New accident alerts for your station will appear here.'] });
   listScreen({ path: '/police/active', title: 'Active Incidents', group: 'active', tab: '/police/alerts', roles: POLICE, tabs: POLICE_TABS, icon: 'zap', empty: ['No active incidents', 'Accepted incidents appear here until resolved.'] });
   listScreen({ path: '/police/history', title: 'Incident History', group: 'history', tab: '/police/alerts', roles: POLICE, tabs: POLICE_TABS, icon: 'clock', empty: ['No history yet', 'Resolved and rejected incidents are listed here.'] });
@@ -43,8 +68,7 @@
   listScreen({ path: '/hospital/response', title: 'Response Management', group: 'active', tab: '/hospital/alerts', roles: HOSP, tabs: HOSP_TABS, icon: 'truck', empty: ['No active responses', 'Accepted emergencies are managed here.'] });
   listScreen({ path: '/hospital/history', title: 'Emergency History', group: 'history', tab: '/hospital/alerts', roles: HOSP, tabs: HOSP_TABS, icon: 'clock', empty: ['No history yet', 'Completed and rejected emergencies are listed here.'] });
 
-  /* 21. Dispatch team (police) and ambulance response (hospital) share one workflow screen.
-     The route is keyed by the accident id; the alert is the signed-in organisation's `my_alert`. */
+  /* 21. Dispatch team (police) and ambulance response (hospital) share one workflow screen. */
   const FLOW = {
     police: ['Alert received', 'Incident accepted', 'Team dispatched', 'Reached location', 'Incident resolved'],
     hospital: ['Emergency received', 'Emergency accepted', 'Ambulance dispatched', 'Arrived at scene', 'Emergency completed'],
@@ -85,20 +109,18 @@
       } else if (al.status === 'arrived') {
         body = `<button class="btn green mt12" data-act="set-state" data-id="${al.id}" data-action="resolve">${icon('check')} ${role === 'police' ? 'Resolve incident' : 'Mark emergency completed'}</button>`;
       } else if (al.status === 'resolved') {
-        body = `<div class="card mt12 center" style="background:var(--green-bg)"><b style="color:#027A48">${icon('check')} Response completed</b></div>`;
+        body = `<div class="card mt12 center" style="background:var(--green-bg)"><b style="color:#047857">${icon('check')} Response completed</b></div>`;
       } else {
         body = `<div class="card mt12 small muted">You rejected this alert: ${esc(al.reject_reason)}</div>`;
       }
       return `${SC.ui.accCard(a, { alert: null })}
         <div class="card mt12"><div class="row between mb8"><h3>Response workflow</h3>${SC.ui.alertStatus(al.status)}</div>${al.status === 'rejected' ? '' : SC.ui.stepper(steps)}${body}</div>
-        <a class="btn light mt12" target="_blank" rel="noopener" href="${SC.gmapsLink(a.latitude, a.longitude)}">${icon('nav')} Route to accident (${Number(al.distance_km).toFixed(1)} km)</a>
-        <div class="btnrow mt12"><button class="btn ghost" data-go="/accident/${a.id}/map">${icon('map', 'sm')} Map</button><button class="btn ghost" data-go="/accident/${a.id}/timeline">${icon('clock', 'sm')} Timeline</button></div>`;
+        <div class="btnrow mt12"><a class="btn light" target="_blank" rel="noopener" href="${SC.gmapsLink(a.latitude, a.longitude)}">${icon('nav')} Route (${Number(al.distance_km).toFixed(1)} km)</a><button class="btn ghost" data-go="/accident/${a.id}/map">${icon('map', 'sm')} Map</button><button class="btn ghost" data-go="/accident/${a.id}/timeline">${icon('clock', 'sm')} Timeline</button></div>`;
     },
   });
   respond('police', '/police/dispatch/:id');
   respond('hospital', '/hospital/respond/:id');
 
-  // Choosing an ambulance / team preset is not an <input> focus, so flag it or the 8 s auto-refresh would erase it.
   SC.actions.pick = (el) => { SC.state.dirty = true; document.querySelectorAll('#picks .pick').forEach((p) => p.classList.remove('sel')); el.classList.add('sel'); };
   SC.actions['team-preset'] = (el) => { SC.state.dirty = true; const input = document.querySelector('form[data-form=dispatch-team] [name=team_name]'); if (input) input.value = el.dataset.team; };
   SC.forms['dispatch-team'] = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
@@ -126,9 +148,10 @@
       const items = await SC.get('/ambulances/');
       SC.state.amb = items;
       const free = items.filter((i) => i.status === 'available').length;
-      return `<div class="grid2">${SC.ui.tile(free, 'Available', 'truck', 'green')}${SC.ui.tile(items.length - free, 'Busy / maintenance', 'clock', 'orange')}</div>
+      return `<div class="toolbar"><div class="small muted">${items.length} registered ambulance${items.length === 1 ? '' : 's'}</div><button class="btn sm" data-act="amb-add">${icon('plus', 'sm')} Add ambulance</button></div>
+        <div class="grid2">${SC.ui.tile(free, 'Available', 'truck', 'green')}${SC.ui.tile(items.length - free, 'Busy / maintenance', 'clock', 'orange')}</div>
         <div class="list mt12">${items.length ? items.map((t) => `<div class="card"><div class="row between"><b>${icon('truck', 'sm')} ${esc(t.vehicle_number)}</b>${ambBadge(t.status)}</div><div class="small muted mt8">${esc(t.driver_name || 'No driver set')}${t.driver_phone ? ' &middot; <a href="tel:' + esc(t.driver_phone) + '">' + esc(t.driver_phone) + '</a>' : ''}</div>
-          <div class="btnrow mt12"><button class="btn sm light" data-act="amb-edit" data-id="${t.id}">${icon('edit', 'sm')} Edit</button><button class="btn sm ghost" style="color:var(--red)" data-act="amb-del" data-id="${t.id}">${icon('trash', 'sm')}</button></div></div>`).join('') : SC.ui.empty('No ambulances registered', 'Tap + to add one.', 'truck')}</div>
+          <div class="btnrow mt12"><button class="btn sm light" data-act="amb-edit" data-id="${t.id}">${icon('edit', 'sm')} Edit</button><button class="btn sm ghost" style="color:var(--red)" data-act="amb-del" data-id="${t.id}">${icon('trash', 'sm')}</button></div></div>`).join('') : SC.ui.empty('No ambulances registered', 'Click "Add ambulance" to register one.', 'truck')}</div>
         <button class="fab" data-act="amb-add" aria-label="Add">${icon('plus', 'lg')}</button>`;
     },
   });
@@ -154,7 +177,7 @@
       return `<div class="hero"><div class="small muted">${esc(SC.state.user.full_name)}</div><h2>${esc(h.name)}</h2>
           <div class="row between mt12"><div><div class="small muted">Emergency availability</div><b>${h.accepting_emergencies ? 'Accepting emergencies' : 'Not accepting'}</b></div><label class="switch"><input type="checkbox" data-act="toggle-emergency" ${h.accepting_emergencies ? 'checked' : ''}><span></span></label></div></div>
         ${newBanner(s.new, '/hospital/alerts')}
-        <div class="grid2 mt12">${SC.ui.tile(s.new, 'New emergencies', 'bell', s.new ? 'red' : '', '/hospital/alerts')}${SC.ui.tile(s.active, 'Active responses', 'truck', 'orange', '/hospital/response')}${SC.ui.tile(s.resolved, 'Completed', 'check', 'green', '/hospital/history')}${SC.ui.tile(`${h.ambulances_available}/${h.ambulances}`, 'Ambulances ready', 'truck', '', '/hospital/ambulances')}</div>
+        <div class="grid4 mt12">${SC.ui.tile(s.new, 'New emergencies', 'bell', s.new ? 'red' : '', '/hospital/alerts')}${SC.ui.tile(s.active, 'Active responses', 'truck', 'orange', '/hospital/response')}${SC.ui.tile(s.resolved, 'Completed', 'check', 'green', '/hospital/history')}${SC.ui.tile(`${h.ambulances_available}/${h.ambulances}`, 'Ambulances ready', 'truck', '', '/hospital/ambulances')}</div>
         <div class="card mt12 clickable" data-go="/hospital/capacity"><div class="row between"><b>${icon('bed', 'sm')} Bed capacity</b><span class="small bold">${h.available_beds}/${h.total_beds} free</span></div><div class="progress mt8"><i style="width:${pct}%"></i></div></div>
         ${quick([['Emergency alerts', 'bell', '/hospital/alerts'], ['Response management', 'activity', '/hospital/response'], ['Ambulances', 'truck', '/hospital/ambulances'], ['Capacity', 'bed', '/hospital/capacity']])}
         ${SC.ui.section('Needs your response', 'See all', '/hospital/alerts')}<div class="list">${pending.length ? pending.map(withQuick).join('') : SC.ui.empty('No pending emergencies', 'You are all caught up.', 'check')}</div>

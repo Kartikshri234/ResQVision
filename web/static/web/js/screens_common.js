@@ -1,19 +1,20 @@
-/* Common screens: splash, onboarding, login, signup, forgot password, OTP, profile, settings, notifications. */
+/* Common screens: splash, onboarding, login, forgot password, OTP, profile, settings, notifications. */
 (function () {
   const { esc, icon } = SC;
-  const logo = (cls) => `<div class="logo ${cls || ''}">${icon('shield')}</div>`;
+  const logo = (cls) => `<div class="logo ${cls || ''}">${icon('resq')}</div>`;
+  const authWrap = (inner) => `<div class="auth-wrap"><div class="authpage">${inner}</div></div>`;
 
   /* 1. Splash */
   SC.route('/', {
     public: true, chrome: false,
-    render: async () => `<div class="splash">${logo()}<h1>ResQVision</h1><p style="color:#B9CBEA">AI road accident detection &amp; emergency response</p><div class="spinner" style="border-color:rgba(255,255,255,.25);border-top-color:#fff;margin-top:24px"></div></div>`,
+    render: async () => `<div class="splash">${logo()}<h1>ResQVision</h1><p style="color:#CBD5E1">AI road accident detection &amp; emergency response</p><div class="spinner" style="border-color:rgba(255,255,255,.25);border-top-color:#fff;margin-top:24px"></div></div>`,
     mount: () => {
       const desktop = window.innerWidth >= 900;
       setTimeout(() => {
         if ((location.hash || '#/') !== '#/' && location.hash !== '') return;
         if (SC.state.user) SC.go(SC.homeFor());
         else SC.go(SC.store.get('onboarded') || desktop ? '/login' : '/onboarding');
-      }, desktop ? 0 : 1300);
+      }, desktop ? 0 : 1100);
     },
   });
 
@@ -41,13 +42,14 @@
   /* 3. Login (username or e-mail) */
   SC.route('/login', {
     public: true, chrome: false,
-    render: async () => `<div class="authpage">${logo('sm')}<h1 class="mt16">Welcome back</h1><p class="muted mt8 mb8">Sign in to the ResQVision emergency platform.</p>
-      <form data-form="login" class="mt24">
+    render: async () => authWrap(`<div class="auth-head">${logo('sm')}<div><h1>ResQVision</h1><p class="muted small">Accident detection &amp; dispatch</p></div></div>
+      <h2 class="mt24">Sign in</h2><p class="muted small mt8">Enter your credentials to access your dashboard.</p>
+      <form data-form="login" class="mt16">
         ${SC.ui.field({ label: 'Username or email', name: 'username', required: true, autocomplete: 'username', placeholder: 'e.g. police_cp' })}
         ${SC.ui.field({ label: 'Password', name: 'password', type: 'password', required: true, autocomplete: 'current-password', placeholder: 'Your password' })}
         <div class="row between mb8"><a data-go="/forgot" class="small bold">Forgot password?</a></div>
-        <button class="btn" type="submit">Sign in</button></form>
-      <p class="center small muted mt24">Accounts are created by the administrator. Contact your administrator if you need access.</p></div>`,
+        <button class="btn mt8" type="submit">Sign in</button></form>
+      <p class="center tiny muted mt24">Accounts are issued by your system administrator.</p>`),
   });
   SC.forms.login = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
     const d = SC.formData(form);
@@ -57,14 +59,12 @@
     SC.go(SC.homeFor());
   });
 
-  /* 4. (No public sign-up: only an administrator can create accounts, from Admin > Services > Users.) */
-
   /* 5. Forgot password -> 6. OTP -> reset */
   SC.route('/forgot', {
     public: true, chrome: false,
-    render: async () => `<div class="authpage"><a data-go="/login" class="row small bold">${icon('back', 'sm')} Back to sign in</a><h1 class="mt16">Forgot password?</h1>
-      <p class="muted mt8">Enter your username, email or phone and we will issue a 6-digit verification code.</p>
-      <form data-form="forgot" class="mt24">${SC.ui.field({ label: 'Username, email or phone', name: 'identifier', required: true })}<button class="btn" type="submit">Send code</button></form></div>`,
+    render: async () => authWrap(`<a data-go="/login" class="row small bold">${icon('back', 'sm')} Back to sign in</a><h2 class="mt16">Forgot password?</h2>
+      <p class="muted small mt8">Enter your username, email or phone and we will issue a 6-digit verification code.</p>
+      <form data-form="forgot" class="mt24">${SC.ui.field({ label: 'Username, email or phone', name: 'identifier', required: true })}<button class="btn" type="submit">Send code</button></form>`),
   });
   SC.forms.forgot = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
     const d = SC.formData(form);
@@ -75,10 +75,10 @@
   });
   SC.route('/otp', {
     public: true, chrome: false,
-    render: async () => `<div class="authpage"><a data-go="/forgot" class="row small bold">${icon('back', 'sm')} Back</a><h1 class="mt16">Verify your code</h1>
-      <p class="muted mt8">Enter the 6-digit code for <b>${esc(SC.state.resetId || 'your account')}</b>. In development it is shown on screen and printed in the server console.</p>
+    render: async () => authWrap(`<a data-go="/forgot" class="row small bold">${icon('back', 'sm')} Back</a><h2 class="mt16">Verify your code</h2>
+      <p class="muted small mt8">Enter the 6-digit code for <b>${esc(SC.state.resetId || 'your account')}</b>. In development it is shown on screen and printed in the server console.</p>
       <form data-form="otp" class="mt24"><label class="fld">Verification code<input class="otp-input" name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required autocomplete="one-time-code"></label>
-      <button class="btn" type="submit">Verify</button></form></div>`,
+      <button class="btn" type="submit">Verify</button></form>`),
   });
   SC.forms.otp = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
     const code = SC.formData(form).code;
@@ -88,8 +88,8 @@
   });
   SC.route('/reset', {
     public: true, chrome: false,
-    render: async () => `<div class="authpage"><h1>Set a new password</h1><p class="muted mt8">Choose a strong password of at least 8 characters.</p>
-      <form data-form="reset" class="mt24">${SC.ui.field({ label: 'New password', name: 'p1', type: 'password', required: true, autocomplete: 'new-password' })}${SC.ui.field({ label: 'Confirm password', name: 'p2', type: 'password', required: true, autocomplete: 'new-password' })}<button class="btn" type="submit">Update password</button></form></div>`,
+    render: async () => authWrap(`<h2>Set a new password</h2><p class="muted small mt8">Choose a strong password of at least 8 characters.</p>
+      <form data-form="reset" class="mt24">${SC.ui.field({ label: 'New password', name: 'p1', type: 'password', required: true, autocomplete: 'new-password' })}${SC.ui.field({ label: 'Confirm password', name: 'p2', type: 'password', required: true, autocomplete: 'new-password' })}<button class="btn" type="submit">Update password</button></form>`),
   });
   SC.forms.reset = (form) => SC.run(form.querySelector('button[type=submit]'), async () => {
     const d = SC.formData(form);
@@ -106,15 +106,22 @@
       const u = SC.state.user;
       const org = u.police_station_name || u.hospital_name || '';
       const roleLabel = { admin: 'Administrator', police: 'Police', hospital: 'Hospital', ambulance: 'Ambulance' }[u.role];
-      return `<div class="card center"><div class="avatar">${esc(SC.fmt.initials(u.full_name))}</div><h2 class="mt12">${esc(u.full_name)}</h2><p class="muted small">${esc(u.email || u.username)}</p>
-        <div class="row wrap mt12" style="justify-content:center"><span class="badge">${esc(roleLabel)}</span>${org ? `<span class="badge gray">${esc(org)}</span>` : ''}</div></div>
-        <div class="card mt16"><dl class="kv"><dt>Username</dt><dd>${esc(u.username)}</dd><dt>Phone</dt><dd>${esc(u.phone || '-')}</dd><dt>Member since</dt><dd>${SC.fmt.dt(u.date_joined)}</dd></dl></div>
-        <div class="card mt16 menu">
-          <div class="mi" data-act="edit-profile">${icon('edit')}<span class="grow">Edit profile</span>${icon('chevron')}</div>
-          <div class="mi" data-act="change-password">${icon('lock')}<span class="grow">Change password</span>${icon('chevron')}</div>
-          <a data-go="/settings">${icon('settings')}<span class="grow">Settings</span>${icon('chevron')}</a>
-          ${u.role === 'admin' ? `<a data-go="/admin/settings">${icon('server')}<span class="grow">System settings</span>${icon('chevron')}</a>` : ''}
-          <div class="mi" data-act="logout" style="color:var(--red)">${icon('logout')}<span class="grow">Sign out</span></div></div>`;
+      return `<div class="cols2">
+        <div>
+          <div class="card center"><div class="avatar">${esc(SC.fmt.initials(u.full_name))}</div><h2 class="mt12">${esc(u.full_name)}</h2><p class="muted small">${esc(u.email || u.username)}</p>
+            <div class="row wrap mt12" style="justify-content:center"><span class="badge">${esc(roleLabel)}</span>${org ? `<span class="badge gray">${esc(org)}</span>` : ''}</div></div>
+          <div class="card mt16"><dl class="kv"><dt>Username</dt><dd>${esc(u.username)}</dd><dt>Phone</dt><dd>${esc(u.phone || '-')}</dd><dt>Member since</dt><dd>${SC.fmt.dt(u.date_joined)}</dd></dl></div>
+        </div>
+        <div>
+          <div class="card menu">
+            <div class="mi" data-act="edit-profile">${icon('edit')}<span class="grow">Edit profile</span>${icon('chevron')}</div>
+            <div class="mi" data-act="change-password">${icon('lock')}<span class="grow">Change password</span>${icon('chevron')}</div>
+            <a data-go="/settings">${icon('settings')}<span class="grow">Preferences</span>${icon('chevron')}</a>
+            ${u.role === 'admin' ? `<a data-go="/admin/settings">${icon('server')}<span class="grow">System settings</span>${icon('chevron')}</a>` : ''}
+            <div class="mi" data-act="logout" style="color:var(--red)">${icon('logout')}<span class="grow">Sign out</span></div>
+          </div>
+        </div>
+      </div>`;
     },
   });
   SC.actions['edit-profile'] = () => {
@@ -129,31 +136,34 @@
 
   /* 8. Settings (per-device preferences) */
   SC.route('/settings', {
-    title: 'Settings', back: '/profile', tab: '/profile',
+    title: 'Preferences', back: '/profile', tab: '/profile',
     render: async () => {
       const row = (key, label, sub) => `<div class="row between" style="padding:12px 0;border-bottom:1px solid var(--line)"><div><div class="bold">${label}</div><div class="small muted">${sub}</div></div><label class="switch"><input type="checkbox" data-pref="${key}" ${SC.store.get(key, true) !== false ? 'checked' : ''}><span></span></label></div>`;
       return `<div class="card">${row('sound', 'Alert sound', 'Play a tone when a new emergency alert arrives')}${row('live', 'Auto-refresh', 'Keep lists and dashboards updated every few seconds')}</div>
-        <div class="card mt16"><h3>About</h3><p class="small muted mt8">ResQVision v1.0 &middot; AI-based road accident detection and emergency response. AI severity values are estimates, not confirmed medical assessments.</p>
+        <div class="card mt16"><h3>About</h3><p class="small muted mt8">ResQVision &middot; AI-based road accident detection and emergency response. AI severity values are estimates, not confirmed medical assessments.</p>
         ${SC.state.user.role === 'admin' ? `<a class="btn light mt12" href="/admin/" target="_blank">Open Django admin</a>` : ''}</div>`;
     },
-    mount: (el) => el.querySelectorAll('[data-pref]').forEach((c) => (c.onchange = () => SC.store.set(c.dataset.pref, c.checked))),
+    mount: (el) => el.querySelectorAll('[data-pref]').forEach((c) => (c.onchange = () => { SC.store.set(c.dataset.pref, c.checked); SC.toast('Preference saved', 'success'); })),
   });
 
   /* 9. Notifications */
+  SC.state.notifFilter = 'all';
   SC.route('/notifications', {
     title: 'Notifications', tab: '/notifications', live: 10000,
     render: async () => {
       const res = await SC.get('/notifications/');
-      const list = res.items;
+      const filter = SC.state.notifFilter || 'all';
+      const list = filter === 'unread' ? res.items.filter((n) => !n.is_read) : res.items;
       SC.state.unread = res.unread; SC.updateBadges();
       const alertish = (n) => n.title.indexOf('🚨') === 0;
-      return `<div class="row between mb8"><span class="muted small">${res.unread} unread</span>${res.unread ? '<button class="btn sm light" data-act="read-all">Mark all read</button>' : ''}</div>
+      return `<div class="toolbar"><div class="chips" style="padding:0"><span class="chip ${filter === 'all' ? 'active' : ''}" data-act="notif-filter" data-val="all">All (${res.items.length})</span><span class="chip ${filter === 'unread' ? 'active' : ''}" data-act="notif-filter" data-val="unread">Unread (${res.unread})</span></div>${res.unread ? '<button class="btn sm light" data-act="read-all">Mark all read</button>' : ''}</div>
         <div class="list">${list.length ? list.map((n) => `<div class="card clickable notif ${n.is_read ? '' : 'unread'}" data-act="open-notif" data-id="${n.id}" data-acc="${n.accident_id || ''}">
           <div class="row" style="align-items:flex-start"><span style="color:${alertish(n) ? 'var(--red)' : 'var(--navy)'}">${icon(alertish(n) ? 'alert' : 'info')}</span>
           <div class="grow"><div class="row between"><b class="small">${esc(n.title)}</b><span class="tiny muted">${SC.fmt.ago(n.created_at)}</span></div>
-          <div class="small muted mt8">${esc(n.message)}</div></div></div></div>`).join('') : SC.ui.empty('No notifications', 'New emergency alerts will appear here.', 'bell')}</div>`;
+          <div class="small muted mt8">${esc(n.message)}</div></div></div></div>`).join('') : SC.ui.empty(filter === 'unread' ? 'No unread notifications' : 'No notifications', 'New emergency alerts will appear here.', 'bell')}</div>`;
     },
   });
+  SC.actions['notif-filter'] = (el) => { SC.state.notifFilter = el.dataset.val; SC.render(); };
   SC.actions['read-all'] = async () => { await SC.post('/notifications/read/'); SC.state.unread = 0; SC.render(); };
   SC.actions['open-notif'] = async (el) => {
     SC.post(`/notifications/${el.dataset.id}/read/`).catch(() => {});

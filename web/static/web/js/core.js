@@ -49,8 +49,10 @@
     server: '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>',
     car: '<path d="M3 13l2-6a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 6v5h-3v-2H6v2H3z"/><circle cx="7.5" cy="14" r="1"/><circle cx="16.5" cy="14" r="1"/>',
     eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
     bed: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
   };
   SC.icon = (name, cls) => `<svg class="ico ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.info}</svg>`;
@@ -76,7 +78,7 @@
   SC.ALERT = { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected', dispatched: 'Dispatched', arrived: 'Arrived', resolved: 'Resolved', none: 'Not notified' };
   const STATUS_COLOR = { detected: 'orange', verification_pending: 'orange', confirmed: 'orange', alert_sent: 'red', accepted: '', team_dispatched: '', arrived: '', resolved: 'green', closed: 'gray' };
   const ALERT_COLOR = { pending: 'orange', accepted: '', dispatched: '', arrived: '', resolved: 'green', rejected: 'red', none: 'gray' };
-  SC.SEV_COLOR = { high: '#D92D20', medium: '#F79009', low: '#12B76A' };
+  SC.SEV_COLOR = { high: '#DC2626', medium: '#D97706', low: '#059669' };
 
   SC.ui.sev = (s) => `<span class="badge ${s === 'high' ? 'red' : s === 'medium' ? 'orange' : 'green'}">${esc((s || '').toUpperCase())}</span>`;
   SC.ui.status = (s) => `<span class="badge ${STATUS_COLOR[s] || ''}">${esc(SC.STATUS[s] || s)}</span>`;
@@ -106,7 +108,10 @@
     let control;
     if (f.type === 'select') control = `<select name="${f.name}" ${f.required ? 'required' : ''}>${(f.options || []).map(([val, lab]) => `<option value="${esc(val)}" ${String(val) === String(v) ? 'selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
     else if (f.type === 'textarea') control = `<textarea name="${f.name}" rows="3" ${f.required ? 'required' : ''} placeholder="${esc(f.placeholder || '')}">${esc(v)}</textarea>`;
-    else control = `<input name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" ${f.required ? 'required' : ''} ${f.step ? `step="${f.step}"` : ''} ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} ${f.maxlength ? `maxlength="${f.maxlength}"` : ''} placeholder="${esc(f.placeholder || '')}" autocomplete="${f.autocomplete || 'off'}">`;
+    else {
+      const inp = `<input name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" ${f.required ? 'required' : ''} ${f.step ? `step="${f.step}"` : ''} ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} ${f.maxlength ? `maxlength="${f.maxlength}"` : ''} placeholder="${esc(f.placeholder || '')}" autocomplete="${f.autocomplete || 'off'}">`;
+      control = f.type === 'password' ? `<div class="pw-wrap">${inp}<button type="button" class="pw-eye" data-act="toggle-pw" aria-label="Show password">${SC.icon('eye', 'sm')}</button></div>` : inp;
+    }
     return `<label class="fld">${esc(f.label)}${control}</label>`;
   };
   SC.formData = (form) => {
@@ -169,9 +174,7 @@
     if (k) { const v = data[k]; return (k !== 'non_field_errors' ? k.replace(/_/g, ' ') + ': ' : '') + (Array.isArray(v) ? v.join(' ') : typeof v === 'object' ? JSON.stringify(v) : v); }
     return 'Request failed (' + status + ')';
   };
-  SC.refreshToken = async () => {
-    return false; // the app uses Django session cookies, so there is no token to refresh
-  };
+  SC.refreshToken = async () => false;
   SC.api = async (path, opts) => {
     opts = opts || {};
     const headers = {};
@@ -219,8 +222,6 @@
       return null;
     }
     const map = L.map(el).setView(o.center || [28.6139, 77.2090], o.zoom || 13);
-    // OSM's tile policy: use the single tile.openstreetmap.org host (the a/b/c subdomains are deprecated), send a
-    // Referer (referrerPolicy) and credit OpenStreetMap with a link.
     const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors', referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(map);
     let tileErrorShown = false;
     tileLayer.on('tileerror', () => {
@@ -233,13 +234,12 @@
     });
     const pts = [];
     (o.markers || []).forEach((m) => {
-      const icon = L.divIcon({ className: '', html: `<div class="pin" style="background:${m.color || '#0B2A5B'}"><span>${esc(m.glyph || '')}</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] });
+      const icon = L.divIcon({ className: '', html: `<div class="pin" style="background:${m.color || '#0F3A75'}"><span>${esc(m.glyph || '')}</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] });
       const mk = L.marker([m.lat, m.lng], { icon }).addTo(map);
       if (m.popup) mk.bindPopup(m.popup);
       pts.push([m.lat, m.lng]);
     });
-    (o.lines || []).forEach((l) => L.polyline(l.points, { color: l.color || '#163F82', dashArray: '6 8', weight: 4 }).addTo(map));
-    // Screens that refresh themselves pass a `key` so the map keeps the user's pan / zoom between refreshes.
+    (o.lines || []).forEach((l) => L.polyline(l.points, { color: l.color || '#1D4ED8', dashArray: '6 8', weight: 4 }).addTo(map));
     const saved = o.key && SC.state.mapViews && SC.state.mapViews[o.key];
     if (saved) map.setView(saved.center, saved.zoom);
     else if (pts.length > 1 && o.fit !== false) map.fitBounds(pts, { padding: [34, 34], maxZoom: 15 });
@@ -255,8 +255,6 @@
   SC.accidentMarker = (a) => ({ lat: a.latitude, lng: a.longitude, color: SC.SEV_COLOR[a.severity], glyph: '!', popup: `<b>${esc(a.accident_id)}</b><br>${esc(a.accident_type || a.status_label || '')}<br><a href="javascript:void(0)" onclick="SC.go('/accident/${a.id}')">View details</a>` });
 
   /* ---------- sound ---------- */
-  // One shared AudioContext: browsers cap how many may exist, so creating one per alert silenced the beep
-  // after a handful of alerts. It also needs resume() when the browser suspended it.
   let audioCtx = null;
   SC.beep = () => {
     if (SC.store.get('sound', true) === false) return;
@@ -283,27 +281,24 @@
     hospital: [['Home', '/hospital/home', 'home'], ['Emergencies', '/hospital/alerts', 'alert'], ['Map', '/map', 'map'], ['Notifications', '/notifications', 'bell'], ['Profile', '/profile', 'user']],
   };
 
-  // Desktop sidebar: the admin gets every section directly (strings are section headings).
   SC.sidenav = {
     admin: ['Administration', ['Admin console', '/admin/console', 'shield'], ['User accounts', '/admin/users', 'users'], ['System settings', '/admin/settings', 'settings'],
       'Services', ['Hospitals', '/admin/hospitals', 'hospital'], ['Police stations', '/admin/police-stations', 'shield'], ['Cameras', '/admin/cameras', 'camera'],
       'Monitoring', ['Accident dashboard', '/admin/home', 'home'], ['Live monitoring', '/admin/live', 'activity'], ['Accidents', '/admin/accidents', 'alert'], ['Map', '/map', 'map'], ['Analytics', '/admin/analytics', 'chart'],
-      'Account', ['My profile', '/profile', 'user']],
+      'Account', ['Notifications', '/notifications', 'bell'], ['My profile', '/profile', 'user']],
+    police: ['Response', ['Dashboard', '/police/home', 'home'], ['New alerts', '/police/alerts', 'bell'], ['Active incidents', '/police/active', 'zap'], ['Incident history', '/police/history', 'clock'], ['Live map', '/map', 'map'],
+      'Account', ['Notifications', '/notifications', 'bell'], ['My profile', '/profile', 'user']],
+    hospital: ['Emergency Desk', ['Dashboard', '/hospital/home', 'home'], ['Emergency alerts', '/hospital/alerts', 'bell'], ['Active responses', '/hospital/response', 'activity'], ['History', '/hospital/history', 'clock'],
+      'Resources', ['Ambulances', '/hospital/ambulances', 'truck'], ['Bed capacity', '/hospital/capacity', 'bed'], ['Live map', '/map', 'map'],
+      'Account', ['Notifications', '/notifications', 'bell'], ['My profile', '/profile', 'user']],
   };
 
-  // Each role gets its own portal name and colour theme (colours: body[data-role] in app.css).
-  const PORTAL = {
-    admin: ['Administrator Console', 'System administration, user accounts and oversight of all responders'],
-    police: ['Police Control Room', 'Receive emergency alerts, accept incidents and dispatch patrol teams'],
-    hospital: ['Hospital Emergency Desk', 'Receive emergency alerts, manage beds and dispatch ambulances'],
+  const ROLE_TAG = {
+    admin: 'Admin Workspace',
+    police: 'Police Dispatch',
+    hospital: 'Hospital Desk',
+    ambulance: 'Responder Unit',
   };
-  function brand(user) {
-    const p = (user && PORTAL[user.role]) || ['ResQVision', 'AI-based Road Accident Detection & Emergency Response Portal'];
-    document.body.dataset.role = user ? user.role : '';
-    const n = document.getElementById('gh-name'), s = document.getElementById('gh-sub');
-    if (n) n.textContent = p[0];
-    if (s) s.textContent = p[1];
-  }
 
   function chrome(def, params) {
     const top = document.getElementById('topbar');
@@ -311,17 +306,19 @@
     const screen = document.getElementById('screen');
     const user = SC.state.user;
     const side = document.getElementById('sidebar');
-    brand(user);
+    document.body.dataset.role = user ? user.role : '';
     screen.className = def.chrome === false ? 'bare' : '';
     if (def.chrome === false || !user) { top.hidden = true; nav.hidden = true; side.hidden = true; return; }
     const title = typeof def.title === 'function' ? def.title(params) : def.title || 'ResQVision';
     const tab = typeof def.tab === 'function' ? def.tab(user) : def.tab;
-    const left = def.back ? `<button class="iconbtn" data-act="back" data-fallback="${def.back === true ? SC.homeFor() : def.back}" aria-label="Back">${SC.icon('back')}</button>` : `<div class="iconbtn" style="background:#fff;color:var(--navy)">${SC.icon('resq')}</div>`;
-    const bell = tab === '/notifications' ? '' : `<button class="iconbtn" data-go="/notifications" aria-label="Notifications">${SC.icon('bell')}${SC.state.unread ? `<span class="dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</button>`;
-    top.innerHTML = `${left}<div class="title">${esc(title)}</div>${bell}`;
+    const left = def.back ? `<button class="iconbtn" data-act="back" data-fallback="${def.back === true ? SC.homeFor() : def.back}" aria-label="Back">${SC.icon('back')}</button>` : `<div class="brand-mark">${SC.icon('resq')}</div>`;
+    const livePill = def.live && SC.store.get('live', true) !== false ? `<span class="live-pill" title="Auto-refresh enabled"><i></i>Live</span>` : '';
+    const refreshBtn = `<button class="iconbtn" data-act="reload" aria-label="Refresh" title="Refresh">${SC.icon('refresh', 'sm')}</button>`;
+    const bell = tab === '/notifications' ? '' : `<button class="iconbtn" data-go="/notifications" aria-label="Notifications" title="Notifications">${SC.icon('bell')}${SC.state.unread ? `<span class="dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</button>`;
+    const userChip = `<a class="top-user" data-go="/profile" title="Profile"><span class="av">${esc(SC.fmt.initials(user.full_name))}</span><span>${esc(user.first_name || user.username)}</span></a>`;
+    top.innerHTML = `${left}<div class="title">${esc(title)}</div>${livePill}${refreshBtn}${bell}${userChip}`;
     top.hidden = false;
 
-    // Desktop sidebar (hidden by CSS on phones, where the bottom bar is used instead)
     const roleLabel = { admin: 'Administrator', police: 'Police', hospital: 'Hospital', ambulance: 'Ambulance' }[user.role] || user.role;
     const org = user.police_station_name || user.hospital_name || '';
     const sideItems = SC.sidenav[user.role] || SC.nav[user.role] || [];
@@ -329,11 +326,13 @@
     const inPath = (p) => curPath === p || curPath.indexOf(p + '/') === 0;
     const exact = sideItems.some((i) => typeof i !== 'string' && inPath(i[1]));
     const isActive = (p) => (exact ? inPath(p) : tab === p);
-    side.innerHTML = `<div class="side-user"><div class="side-av">${esc(SC.fmt.initials(user.full_name))}</div><div class="grow"><b>${esc(user.full_name)}</b><div class="tiny">${esc(roleLabel)}${org ? ' &middot; ' + esc(org) : ''}</div></div></div>`
+    side.innerHTML = `<div class="side-brand"><div class="bm">${SC.icon('resq')}</div><div><b>ResQVision</b><span>${esc(ROLE_TAG[user.role] || 'Emergency Response')}</span></div></div>`
+      + `<div class="side-user"><div class="side-av">${esc(SC.fmt.initials(user.full_name))}</div><div class="grow"><b>${esc(user.full_name)}</b><div class="tiny">${esc(roleLabel)}${org ? ' &middot; ' + esc(org) : ''}</div></div></div>`
       + (sideItems.some((i) => typeof i === 'string') ? '' : '<div class="side-label">Menu</div>')
       + sideItems.map((it) => (typeof it === 'string' ? `<div class="side-label">${esc(it)}</div>` : `<a data-go="${it[1]}" class="${isActive(it[1]) ? 'active' : ''}">${SC.icon(it[2])}<span class="grow">${it[0]}</span>${it[0] === 'Notifications' && SC.state.unread ? `<span class="badge-dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</a>`)).join('')
       + (sideItems.indexOf('Account') >= 0 ? '' : '<div class="side-label">Account</div>') + `<a data-act="logout">${SC.icon('logout')}<span>Sign out</span></a>`;
     side.hidden = def.nav === false || !sideItems.length;
+
     const items = SC.nav[user.role];
     if (!items || def.nav === false) { nav.hidden = true; return; }
     nav.innerHTML = items.map(([label, path, ico]) => `<a data-go="${path}" class="${tab === path ? 'active' : ''}">${SC.icon(ico)}<span>${label}</span>${label === 'Notifications' && SC.state.unread ? `<span class="badge-dot">${SC.state.unread > 9 ? '9+' : SC.state.unread}</span>` : ''}</a>`).join('');
@@ -350,7 +349,7 @@
     if (!match) return SC.go(SC.state.user ? SC.homeFor() : '/login');
     const { def, params } = match;
     SC.clearTimers();
-    SC.state.dirty = false;   // a fresh screen has no half-made choices to protect from the auto-refresh
+    SC.state.dirty = false;
     SC.state.mapViews = {};
     const user = SC.state.user;
     if (!def.public && !user) return SC.go('/login');
@@ -376,7 +375,6 @@
     if (def.live && SC.store.get('live', true) !== false) {
       SC.state.timers.push(setInterval(async () => {
         const ae = document.activeElement;
-        // Do not repaint under someone who is typing, has a dialog open, or picked something (SC.state.dirty).
         if (SC.modalOpen() || SC.state.dirty || (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) || document.hidden) return;
         try { await paint(false); } catch (e) { /* keep last good screen */ }
       }, def.live));
@@ -389,7 +387,27 @@
   SC.actions['close-modal'] = () => SC.closeModal();
   SC.actions['modal-bg'] = (el, e) => { if (e.target === el) SC.closeModal(); };
   SC.actions.logout = () => SC.logout();
+  SC.actions['toggle-pw'] = (el) => {
+    const inp = el.parentElement.querySelector('input');
+    if (!inp) return;
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    el.innerHTML = SC.icon(show ? 'eyeOff' : 'eye', 'sm');
+    el.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  };
+  SC.actions['copy-text'] = (el) => {
+    const val = el.dataset.text || '';
+    if (!val) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).then(() => SC.toast(el.dataset.msg || 'Copied to clipboard', 'success')).catch(() => SC.toast(val));
+    } else {
+      SC.toast(val);
+    }
+  };
 
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && SC.modalOpen()) SC.closeModal();
+  });
   document.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]');
     if (act && SC.actions[act.dataset.act]) { SC.actions[act.dataset.act](act, e); return; }
